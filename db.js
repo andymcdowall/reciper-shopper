@@ -119,6 +119,28 @@ function getAggregatedShoppingList() {
   return Object.values(aggregated).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function getAllRecipesWithIngredients() {
+  const recipes = getAllRecipes.all();
+  return recipes.map(recipe => {
+    const ingredients = getIngredientsByRecipeId.all(recipe.id);
+    return {
+      name: recipe.name,
+      servings: recipe.servings,
+      prep_time: recipe.prep_time,
+      instructions: recipe.instructions,
+      ingredients: ingredients.map(ing => ({
+        name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit
+      }))
+    };
+  });
+}
+
+function deleteAllRecipes() {
+  db.prepare('DELETE FROM recipes').run();
+}
+
 module.exports = {
   db,
   getAllRecipes,
@@ -130,5 +152,7 @@ module.exports = {
   getCartRecipes,
   addToCart,
   removeFromCart,
-  getAggregatedShoppingList
+  getAggregatedShoppingList,
+  getAllRecipesWithIngredients,
+  deleteAllRecipes
 };

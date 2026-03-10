@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "NODE_ENV=test jest --coverage",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:ci": "NODE_ENV=test jest --ci --coverage --maxWorkers=2"
   },
   "keywords": ["recipe", "shopping", "meal-planning"],
   "author": "",
@@ -13,5 +16,24 @@
   "dependencies": {
     "express": "^4.18.2",
     "better-sqlite3": "^9.2.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "@testing-library/dom": "^9.3.4",
+    "@testing-library/jest-dom": "^6.1.5"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "*.js",
+      "!coverage/**",
+      "!node_modules/**"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "maxWorkers": 1
   }
 }

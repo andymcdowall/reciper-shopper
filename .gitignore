@@ -1,0 +1,7 @@
+/.claude/settings.json
+node_modules/
+coverage/
+*.db
+__tests__/*.db
+.env
+.DS_Store
