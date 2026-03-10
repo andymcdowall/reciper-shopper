@@ -195,6 +195,8 @@ function showView(viewName) {
 
   if (viewName === 'recipes') {
     fetchRecipes();
+  } else if (viewName === 'add-recipe') {
+    fetchIngredients(); // Ensure ingredients are loaded for autocomplete
   } else if (viewName === 'cart') {
     fetchCart();
   } else if (viewName === 'shopping-list') {
