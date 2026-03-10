@@ -1,6 +1,7 @@
 /**
  * Simplified API tests that test the actual server.js file
  * These tests run against a real server instance
+ * @jest-environment node
  */
 const request = require('supertest');
 const path = require('path');

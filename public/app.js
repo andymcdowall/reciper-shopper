@@ -236,10 +236,8 @@ async function importRecipes() {
   const mode = document.querySelector('input[name="import-mode"]:checked').value;
 
   // Confirm overwrite mode
-  if (mode === 'overwrite') {
-    if (!confirm('WARNING: This will delete ALL existing recipes and replace them with the imported ones. Are you sure?')) {
-      return;
-    }
+  if (mode === 'overwrite' && !confirm('WARNING: This will delete ALL existing recipes and replace them with the imported ones. Are you sure?')) {
+    return;
   }
 
   try {
