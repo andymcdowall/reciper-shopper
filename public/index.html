@@ -52,8 +52,7 @@
             <div id="ingredients-list">
               <div class="ingredient-row">
                 <div class="ingredient-name-container">
-                  <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
-                  <span class="ingredient-status"></span>
+                  <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off">
                 </div>
                 <input type="hidden" class="ingredient-id">
                 <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
@@ -62,7 +61,6 @@
               </div>
             </div>
             <button type="button" id="add-ingredient-btn" class="btn-secondary">+ Add Ingredient</button>
-            <datalist id="ingredients-datalist"></datalist>
           </div>
 
           <div class="form-group">

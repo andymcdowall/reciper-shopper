@@ -58,7 +58,6 @@ async function fetchShoppingList() {
 async function fetchIngredients() {
   const response = await fetch('/api/ingredients');
   ingredients = await response.json();
-  updateIngredientsDatalist();
   renderIngredients();
 }
 
@@ -180,12 +179,6 @@ function renderIngredients() {
   `).join('');
 }
 
-function updateIngredientsDatalist() {
-  const datalist = document.getElementById('ingredients-datalist');
-  datalist.innerHTML = ingredients.map(ing =>
-    `<option value="${ing.name}" data-id="${ing.id}">`
-  ).join('');
-}
 
 // View management
 function showView(viewName) {
@@ -303,8 +296,7 @@ function addIngredientRow() {
   row.className = 'ingredient-row';
   row.innerHTML = `
     <div class="ingredient-name-container">
-      <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
-      <span class="ingredient-status"></span>
+      <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off">
     </div>
     <input type="hidden" class="ingredient-id">
     <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
@@ -422,40 +414,81 @@ async function importRecipes() {
 
 // Helper function to attach ingredient autocomplete handler
 function attachIngredientAutocomplete(nameInput) {
+  const row = nameInput.closest('.ingredient-row');
+  const idInput = row.querySelector('.ingredient-id');
+  let dropdown = row.querySelector('.autocomplete-dropdown');
+
+  // Create dropdown if it doesn't exist
+  if (!dropdown) {
+    dropdown = document.createElement('div');
+    dropdown.className = 'autocomplete-dropdown';
+    nameInput.parentElement.appendChild(dropdown);
+  }
+
+  // Input event handler
   nameInput.addEventListener('input', function() {
-    const row = this.closest('.ingredient-row');
-    const idInput = row.querySelector('.ingredient-id');
-    const statusIndicator = row.querySelector('.ingredient-status');
     const value = this.value.trim();
 
-    // Find matching ingredient
-    const matchingIngredient = ingredients.find(ing =>
-      ing.name.toLowerCase() === value.toLowerCase()
+    if (!value) {
+      dropdown.style.display = 'none';
+      idInput.value = '';
+      return;
+    }
+
+    // Filter matching ingredients
+    const matches = ingredients.filter(ing =>
+      ing.name.toLowerCase().includes(value.toLowerCase())
     );
 
-    if (matchingIngredient) {
-      idInput.value = matchingIngredient.id;
-      if (statusIndicator) {
-        statusIndicator.textContent = '✓ Existing';
-        statusIndicator.className = 'ingredient-status existing';
-      }
-      nameInput.classList.add('existing-ingredient');
-      nameInput.classList.remove('new-ingredient');
-    } else if (value) {
-      idInput.value = '';
-      if (statusIndicator) {
-        statusIndicator.textContent = '+ New';
-        statusIndicator.className = 'ingredient-status new';
-      }
-      nameInput.classList.add('new-ingredient');
-      nameInput.classList.remove('existing-ingredient');
+    // Build dropdown content
+    let html = '';
+
+    // Add matching ingredients
+    matches.forEach(ing => {
+      html += `<div class="autocomplete-item" data-id="${ing.id}" data-name="${ing.name}">
+        <span class="item-icon">✓</span> ${ing.name}
+      </div>`;
+    });
+
+    // Add "Add new" option if no exact match
+    const exactMatch = matches.find(ing => ing.name.toLowerCase() === value.toLowerCase());
+    if (!exactMatch) {
+      html += `<div class="autocomplete-item add-new" data-name="${value}">
+        <span class="item-icon">+</span> Add "${value}"
+      </div>`;
+    }
+
+    if (html) {
+      dropdown.innerHTML = html;
+      dropdown.style.display = 'block';
+
+      // Add click handlers to items
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', function() {
+          const name = this.dataset.name;
+          const id = this.dataset.id;
+
+          nameInput.value = name;
+          idInput.value = id || '';
+          dropdown.style.display = 'none';
+        });
+      });
     } else {
-      idInput.value = '';
-      if (statusIndicator) {
-        statusIndicator.textContent = '';
-        statusIndicator.className = 'ingredient-status';
-      }
-      nameInput.classList.remove('existing-ingredient', 'new-ingredient');
+      dropdown.style.display = 'none';
+    }
+  });
+
+  // Hide dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!nameInput.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  // Show dropdown when focusing
+  nameInput.addEventListener('focus', function() {
+    if (this.value.trim()) {
+      this.dispatchEvent(new Event('input'));
     }
   });
 }

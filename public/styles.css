@@ -168,39 +168,54 @@ textarea {
 
 .ingredient-name-container {
   position: relative;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: none;
+}
+
+.autocomplete-item {
+  padding: 0.75rem;
+  cursor: pointer;
   display: flex;
   align-items: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s;
 }
 
-.ingredient-name-container input {
-  flex: 1;
-  padding-right: 80px;
+.autocomplete-item:hover {
+  background-color: #f5f5f5;
 }
 
-.ingredient-status {
-  position: absolute;
-  right: 10px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  pointer-events: none;
+.autocomplete-item .item-icon {
+  font-weight: bold;
+  font-size: 1.1rem;
 }
 
-.ingredient-status.existing {
+.autocomplete-item:not(.add-new) .item-icon {
   color: #27ae60;
 }
 
-.ingredient-status.new {
+.autocomplete-item.add-new {
+  border-top: 1px solid #eee;
   color: #e67e22;
+  font-weight: 500;
 }
 
-.ingredient-name.existing-ingredient {
-  border-color: #27ae60;
-  background-color: #f0fff4;
-}
-
-.ingredient-name.new-ingredient {
-  border-color: #e67e22;
-  background-color: #fff9f0;
+.autocomplete-item.add-new .item-icon {
+  color: #e67e22;
 }
 
 #ingredients-list {
