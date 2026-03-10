@@ -302,7 +302,10 @@ function addIngredientRow() {
   const row = document.createElement('div');
   row.className = 'ingredient-row';
   row.innerHTML = `
-    <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+    <div class="ingredient-name-container">
+      <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+      <span class="ingredient-status"></span>
+    </div>
     <input type="hidden" class="ingredient-id">
     <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
     <input type="text" class="ingredient-unit" placeholder="Unit" required>
@@ -422,6 +425,7 @@ function attachIngredientAutocomplete(nameInput) {
   nameInput.addEventListener('input', function() {
     const row = this.closest('.ingredient-row');
     const idInput = row.querySelector('.ingredient-id');
+    const statusIndicator = row.querySelector('.ingredient-status');
     const value = this.value.trim();
 
     // Find matching ingredient
@@ -431,8 +435,27 @@ function attachIngredientAutocomplete(nameInput) {
 
     if (matchingIngredient) {
       idInput.value = matchingIngredient.id;
+      if (statusIndicator) {
+        statusIndicator.textContent = '✓ Existing';
+        statusIndicator.className = 'ingredient-status existing';
+      }
+      nameInput.classList.add('existing-ingredient');
+      nameInput.classList.remove('new-ingredient');
+    } else if (value) {
+      idInput.value = '';
+      if (statusIndicator) {
+        statusIndicator.textContent = '+ New';
+        statusIndicator.className = 'ingredient-status new';
+      }
+      nameInput.classList.add('new-ingredient');
+      nameInput.classList.remove('existing-ingredient');
     } else {
       idInput.value = '';
+      if (statusIndicator) {
+        statusIndicator.textContent = '';
+        statusIndicator.className = 'ingredient-status';
+      }
+      nameInput.classList.remove('existing-ingredient', 'new-ingredient');
     }
   });
 }

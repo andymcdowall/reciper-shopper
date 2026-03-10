@@ -51,7 +51,10 @@
             <label>Ingredients *</label>
             <div id="ingredients-list">
               <div class="ingredient-row">
-                <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+                <div class="ingredient-name-container">
+                  <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+                  <span class="ingredient-status"></span>
+                </div>
                 <input type="hidden" class="ingredient-id">
                 <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
                 <input type="text" class="ingredient-unit" placeholder="Unit" required>

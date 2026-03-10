@@ -166,6 +166,43 @@ textarea {
   margin-bottom: 0.5rem;
 }
 
+.ingredient-name-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ingredient-name-container input {
+  flex: 1;
+  padding-right: 80px;
+}
+
+.ingredient-status {
+  position: absolute;
+  right: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.ingredient-status.existing {
+  color: #27ae60;
+}
+
+.ingredient-status.new {
+  color: #e67e22;
+}
+
+.ingredient-name.existing-ingredient {
+  border-color: #27ae60;
+  background-color: #f0fff4;
+}
+
+.ingredient-name.new-ingredient {
+  border-color: #e67e22;
+  background-color: #fff9f0;
+}
+
 #ingredients-list {
   margin-bottom: 1rem;
 }
