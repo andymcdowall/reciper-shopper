@@ -451,10 +451,13 @@ function attachIngredientAutocomplete(nameInput) {
       </div>`;
     });
 
-    // Always add "Add new" option at the bottom
-    html += `<div class="autocomplete-item add-new" data-name="${value}">
-      <span class="item-icon">+</span> Add "${value}"
-    </div>`;
+    // Add "Add new" option only if no exact match exists
+    const exactMatch = matches.find(ing => ing.name.toLowerCase() === value.toLowerCase());
+    if (!exactMatch) {
+      html += `<div class="autocomplete-item add-new" data-name="${value}">
+        <span class="item-icon">+</span> Add "${value}"
+      </div>`;
+    }
 
     if (html) {
       dropdown.innerHTML = html;
