@@ -138,6 +138,11 @@ function showView(viewName) {
     fetchCart();
   } else if (viewName === 'shopping-list') {
     fetchShoppingList();
+  } else if (viewName === 'export-import') {
+    // Clear any previous import results
+    document.getElementById('import-result').innerHTML = '';
+    document.getElementById('import-file').value = '';
+    document.getElementById('import-btn').disabled = true;
   }
 }
 
@@ -199,11 +204,95 @@ function clearRecipeForm() {
   `;
 }
 
+// Export/Import functions
+async function exportRecipes() {
+  try {
+    const response = await fetch('/api/export');
+    const data = await response.json();
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `recipes-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    alert('Failed to export recipes: ' + error.message);
+  }
+}
+
+async function importRecipes() {
+  const fileInput = document.getElementById('import-file');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    alert('Please select a file to import');
+    return;
+  }
+
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
+
+  // Confirm overwrite mode
+  if (mode === 'overwrite' && !confirm('WARNING: This will delete ALL existing recipes and replace them with the imported ones. Are you sure?')) {
+    return;
+  }
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    if (!data.recipes || !Array.isArray(data.recipes)) {
+      throw new Error('Invalid file format: missing recipes array');
+    }
+
+    const response = await fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipes: data.recipes, mode })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Import failed');
+    }
+
+    // Display results
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.innerHTML = `
+      <div class="success-message">
+        <strong>Import completed!</strong><br>
+        Imported: ${result.imported} recipe(s)<br>
+        ${result.skipped > 0 ? `Skipped: ${result.skipped} recipe(s) (duplicates or invalid)` : ''}
+      </div>
+    `;
+
+    // Refresh recipes list
+    await fetchRecipes();
+
+    // Clear the file input
+    fileInput.value = '';
+    document.getElementById('import-btn').disabled = true;
+  } catch (error) {
+    const resultDiv = document.getElementById('import-result');
+    resultDiv.innerHTML = `
+      <div class="error-message">
+        <strong>Import failed:</strong><br>
+        ${error.message}
+      </div>
+    `;
+  }
+}
+
 // Event listeners
 document.getElementById('nav-recipes').addEventListener('click', () => showView('recipes'));
 document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
 document.getElementById('nav-cart').addEventListener('click', () => showView('cart'));
 document.getElementById('nav-shopping-list').addEventListener('click', () => showView('shopping-list'));
+document.getElementById('nav-export-import').addEventListener('click', () => showView('export-import'));
 
 document.getElementById('add-ingredient-btn').addEventListener('click', addIngredientRow);
 
@@ -235,6 +324,13 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
   await createRecipe({ name, servings, prep_time, instructions, ingredients });
   clearRecipeForm();
   showView('recipes');
+});
+
+// Export/Import event listeners
+document.getElementById('export-btn').addEventListener('click', exportRecipes);
+document.getElementById('import-btn').addEventListener('click', importRecipes);
+document.getElementById('import-file').addEventListener('change', (e) => {
+  document.getElementById('import-btn').disabled = !e.target.files[0];
 });
 
 // Initialize

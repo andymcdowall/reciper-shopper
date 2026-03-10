@@ -9,7 +9,9 @@ const {
   getCartRecipes,
   addToCart,
   removeFromCart,
-  getAggregatedShoppingList
+  getAggregatedShoppingList,
+  getAllRecipesWithIngredients,
+  deleteAllRecipes
 } = require('./db');
 
 const app = express();
@@ -118,6 +120,94 @@ app.get('/api/shopping-list', (req, res) => {
   try {
     const shoppingList = getAggregatedShoppingList();
     res.json(shoppingList);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Export route
+app.get('/api/export', (req, res) => {
+  try {
+    const recipes = getAllRecipesWithIngredients();
+    const exportData = {
+      version: '1.0',
+      exported_at: new Date().toISOString(),
+      recipes: recipes
+    };
+    res.json(exportData);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Import route
+app.post('/api/import', (req, res) => {
+  try {
+    const { recipes, mode } = req.body;
+
+    if (!recipes || !Array.isArray(recipes)) {
+      return res.status(400).json({ error: 'Invalid import data: recipes array is required' });
+    }
+
+    if (mode !== 'add' && mode !== 'overwrite') {
+      return res.status(400).json({ error: 'Invalid mode: must be "add" or "overwrite"' });
+    }
+
+    let imported = 0;
+    let skipped = 0;
+
+    // Overwrite mode: delete all existing recipes first
+    if (mode === 'overwrite') {
+      deleteAllRecipes();
+    }
+
+    // Get existing recipe names to check for duplicates (only in add mode)
+    const existingNames = mode === 'add'
+      ? new Set(getAllRecipes.all().map(r => r.name.toLowerCase()))
+      : new Set();
+
+    // Import each recipe
+    for (const recipe of recipes) {
+      // Validate recipe structure
+      if (!recipe.name || !recipe.ingredients || !Array.isArray(recipe.ingredients) || recipe.ingredients.length === 0) {
+        skipped++;
+        continue;
+      }
+
+      // Skip duplicates in add mode
+      if (mode === 'add' && existingNames.has(recipe.name.toLowerCase())) {
+        skipped++;
+        continue;
+      }
+
+      // Validate ingredients
+      const validIngredients = recipe.ingredients.every(ing =>
+        ing.name && typeof ing.quantity === 'number' && ing.unit
+      );
+
+      if (!validIngredients) {
+        skipped++;
+        continue;
+      }
+
+      // Import the recipe
+      createRecipeWithIngredients({
+        name: recipe.name,
+        servings: recipe.servings || null,
+        prep_time: recipe.prep_time || null,
+        instructions: recipe.instructions || '',
+        ingredients: recipe.ingredients
+      });
+
+      imported++;
+    }
+
+    res.json({
+      message: 'Import completed',
+      imported,
+      skipped,
+      mode
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

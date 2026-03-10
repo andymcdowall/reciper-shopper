@@ -15,6 +15,7 @@
         <button id="nav-add-recipe" class="nav-btn">Add Recipe</button>
         <button id="nav-cart" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
         <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
+        <button id="nav-export-import" class="nav-btn">Export/Import</button>
       </nav>
     </header>
 
@@ -80,6 +81,47 @@
       <section id="shopping-list-view" class="view">
         <h2>Shopping List</h2>
         <div id="shopping-list-items"></div>
+      </section>
+
+      <!-- Export/Import View -->
+      <section id="export-import-view" class="view">
+        <h2>Export/Import Recipes</h2>
+
+        <div class="export-section">
+          <h3>Export Recipes</h3>
+          <p>Download all your recipes as a JSON file for backup or sharing.</p>
+          <button id="export-btn" class="btn-primary">Export Recipes</button>
+        </div>
+
+        <hr>
+
+        <div class="import-section">
+          <h3>Import Recipes</h3>
+          <p>Upload a JSON file to import recipes.</p>
+
+          <div class="form-group">
+            <label for="import-file">Select File</label>
+            <input type="file" id="import-file" accept=".json">
+          </div>
+
+          <div class="form-group">
+            <label>Import Mode</label>
+            <div class="radio-group">
+              <label>
+                <input type="radio" name="import-mode" value="add" checked>
+                Add to existing recipes (skip duplicates)
+              </label>
+              <label>
+                <input type="radio" name="import-mode" value="overwrite">
+                Overwrite all recipes (delete existing recipes)
+              </label>
+            </div>
+          </div>
+
+          <button id="import-btn" class="btn-primary" disabled>Import Recipes</button>
+
+          <div id="import-result" class="import-result"></div>
+        </div>
       </section>
     </main>
   </div>
