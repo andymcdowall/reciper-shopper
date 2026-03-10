@@ -17,11 +17,18 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS ingredients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS recipe_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     recipe_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
+    ingredient_id INTEGER NOT NULL,
     quantity REAL NOT NULL,
     unit TEXT NOT NULL,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+    FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS cart (
@@ -37,19 +44,42 @@ const getAllRecipes = db.prepare('SELECT * FROM recipes ORDER BY created_at DESC
 
 const getRecipeById = db.prepare('SELECT * FROM recipes WHERE id = ?');
 
-const getIngredientsByRecipeId = db.prepare('SELECT * FROM ingredients WHERE recipe_id = ?');
+const getIngredientsByRecipeId = db.prepare(`
+  SELECT i.id, i.name, ri.quantity, ri.unit
+  FROM ingredients i
+  INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+  WHERE ri.recipe_id = ?
+`);
 
 const createRecipe = db.prepare(`
   INSERT INTO recipes (name, servings, prep_time, instructions)
   VALUES (@name, @servings, @prep_time, @instructions)
 `);
 
-const createIngredient = db.prepare(`
-  INSERT INTO ingredients (recipe_id, name, quantity, unit)
-  VALUES (@recipe_id, @name, @quantity, @unit)
+const createRecipeIngredient = db.prepare(`
+  INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
+  VALUES (@recipe_id, @ingredient_id, @quantity, @unit)
 `);
 
 const deleteRecipe = db.prepare('DELETE FROM recipes WHERE id = ?');
+
+// Ingredient queries
+const getAllIngredients = db.prepare('SELECT * FROM ingredients ORDER BY name ASC');
+
+const getIngredientById = db.prepare('SELECT * FROM ingredients WHERE id = ?');
+
+const getIngredientByName = db.prepare('SELECT * FROM ingredients WHERE name = ? COLLATE NOCASE');
+
+const createIngredient = db.prepare(`
+  INSERT INTO ingredients (name)
+  VALUES (@name)
+`);
+
+const updateIngredient = db.prepare(`
+  UPDATE ingredients SET name = @name WHERE id = @id
+`);
+
+const deleteIngredient = db.prepare('DELETE FROM ingredients WHERE id = ?');
 
 // Cart queries
 const getCartRecipeIds = db.prepare('SELECT recipe_id FROM cart');
@@ -65,9 +95,10 @@ const getCartRecipes = db.prepare(`
 `);
 
 const getShoppingList = db.prepare(`
-  SELECT i.name, i.quantity, i.unit
+  SELECT i.name, ri.quantity, ri.unit
   FROM ingredients i
-  INNER JOIN cart c ON i.recipe_id = c.recipe_id
+  INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+  INNER JOIN cart c ON ri.recipe_id = c.recipe_id
   ORDER BY i.name
 `);
 
@@ -85,9 +116,10 @@ function createRecipeWithIngredients(recipeData) {
     const recipeId = result.lastInsertRowid;
 
     for (const ingredient of data.ingredients) {
-      createIngredient.run({
+      // ingredient should now have ingredient_id, quantity, and unit
+      createRecipeIngredient.run({
         recipe_id: recipeId,
-        name: ingredient.name,
+        ingredient_id: ingredient.ingredient_id,
         quantity: ingredient.quantity,
         unit: ingredient.unit
       });
@@ -97,6 +129,16 @@ function createRecipeWithIngredients(recipeData) {
   });
 
   return transaction(recipeData);
+}
+
+// Ingredient helper functions
+function getOrCreateIngredient(name) {
+  let ingredient = getIngredientByName.get(name);
+  if (!ingredient) {
+    const result = createIngredient.run({ name });
+    ingredient = getIngredientById.get(result.lastInsertRowid);
+  }
+  return ingredient;
 }
 
 function getAggregatedShoppingList() {
@@ -154,5 +196,13 @@ module.exports = {
   removeFromCart,
   getAggregatedShoppingList,
   getAllRecipesWithIngredients,
-  deleteAllRecipes
+  deleteAllRecipes,
+  // Ingredient exports
+  getAllIngredients,
+  getIngredientById,
+  getIngredientByName,
+  getOrCreateIngredient,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient
 };

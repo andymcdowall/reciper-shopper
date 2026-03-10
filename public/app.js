@@ -1,7 +1,9 @@
 // State
 let recipes = [];
 let cartRecipes = [];
+let ingredients = [];
 let currentView = 'recipes';
+let editingIngredientId = null;
 
 // API functions
 async function fetchRecipes() {
@@ -50,6 +52,36 @@ async function fetchShoppingList() {
   const response = await fetch('/api/shopping-list');
   const items = await response.json();
   renderShoppingList(items);
+}
+
+// Ingredient API functions
+async function fetchIngredients() {
+  const response = await fetch('/api/ingredients');
+  ingredients = await response.json();
+  updateIngredientsDatalist();
+  renderIngredients();
+}
+
+async function createIngredientAPI(name) {
+  const response = await fetch('/api/ingredients', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  return await response.json();
+}
+
+async function updateIngredientAPI(id, name) {
+  const response = await fetch(`/api/ingredients/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  return await response.json();
+}
+
+async function deleteIngredientAPI(id) {
+  await fetch(`/api/ingredients/${id}`, { method: 'DELETE' });
 }
 
 // Rendering functions
@@ -122,6 +154,35 @@ function renderShoppingList(items) {
   `;
 }
 
+function renderIngredients() {
+  const container = document.getElementById('ingredients-grid');
+
+  if (ingredients.length === 0) {
+    container.innerHTML = '<p class="empty-state">No ingredients yet. Add your first ingredient!</p>';
+    return;
+  }
+
+  container.innerHTML = ingredients.map(ing => `
+    <div class="ingredient-card" data-id="${ing.id}">
+      <div class="ingredient-name" id="ing-name-${ing.id}">${ing.name}</div>
+      <input type="text" class="ingredient-edit-input" id="ing-edit-${ing.id}" value="${ing.name}" style="display: none;">
+      <div class="ingredient-actions">
+        <button onclick="editIngredient(${ing.id})" class="btn-secondary btn-small" id="ing-edit-btn-${ing.id}">Edit</button>
+        <button onclick="saveIngredient(${ing.id})" class="btn-primary btn-small" id="ing-save-btn-${ing.id}" style="display: none;">Save</button>
+        <button onclick="cancelEditIngredient(${ing.id})" class="btn-secondary btn-small" id="ing-cancel-btn-${ing.id}" style="display: none;">Cancel</button>
+        <button onclick="deleteIngredient(${ing.id})" class="btn-danger btn-small">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateIngredientsDatalist() {
+  const datalist = document.getElementById('ingredients-datalist');
+  datalist.innerHTML = ingredients.map(ing =>
+    `<option value="${ing.name}" data-id="${ing.id}">`
+  ).join('');
+}
+
 // View management
 function showView(viewName) {
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
@@ -138,6 +199,8 @@ function showView(viewName) {
     fetchCart();
   } else if (viewName === 'shopping-list') {
     fetchShoppingList();
+  } else if (viewName === 'ingredients') {
+    fetchIngredients();
   } else if (viewName === 'export-import') {
     // Clear any previous import results
     document.getElementById('import-result').innerHTML = '';
@@ -168,13 +231,69 @@ async function deleteRecipe(id) {
   await fetchRecipes();
 }
 
+// Ingredient actions
+async function addIngredient() {
+  const nameInput = document.getElementById('new-ingredient-name');
+  const name = nameInput.value.trim();
+
+  if (!name) return;
+
+  await createIngredientAPI(name);
+  nameInput.value = '';
+  await fetchIngredients();
+}
+
+function editIngredient(id) {
+  editingIngredientId = id;
+  document.getElementById(`ing-name-${id}`).style.display = 'none';
+  document.getElementById(`ing-edit-${id}`).style.display = 'block';
+  document.getElementById(`ing-edit-btn-${id}`).style.display = 'none';
+  document.getElementById(`ing-save-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-cancel-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-edit-${id}`).focus();
+}
+
+async function saveIngredient(id) {
+  const newName = document.getElementById(`ing-edit-${id}`).value.trim();
+
+  if (!newName) {
+    alert('Ingredient name cannot be empty');
+    return;
+  }
+
+  await updateIngredientAPI(id, newName);
+  editingIngredientId = null;
+  await fetchIngredients();
+  await fetchRecipes(); // Refresh recipes to show updated ingredient names
+}
+
+function cancelEditIngredient(id) {
+  editingIngredientId = null;
+  const ingredient = ingredients.find(ing => ing.id === id);
+  document.getElementById(`ing-edit-${id}`).value = ingredient.name;
+  document.getElementById(`ing-name-${id}`).style.display = 'block';
+  document.getElementById(`ing-edit-${id}`).style.display = 'none';
+  document.getElementById(`ing-edit-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-save-btn-${id}`).style.display = 'none';
+  document.getElementById(`ing-cancel-btn-${id}`).style.display = 'none';
+}
+
+async function deleteIngredient(id) {
+  if (!confirm('Are you sure you want to delete this ingredient? It will be removed from all recipes that use it.')) return;
+
+  await deleteIngredientAPI(id);
+  await fetchIngredients();
+  await fetchRecipes(); // Refresh recipes in case any were affected
+}
+
 // Form handling
 function addIngredientRow() {
   const container = document.getElementById('ingredients-list');
   const row = document.createElement('div');
   row.className = 'ingredient-row';
   row.innerHTML = `
-    <input type="text" class="ingredient-name" placeholder="Ingredient name" required>
+    <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+    <input type="hidden" class="ingredient-id">
     <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
     <input type="text" class="ingredient-unit" placeholder="Unit" required>
     <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
@@ -196,7 +315,8 @@ function clearRecipeForm() {
   const container = document.getElementById('ingredients-list');
   container.innerHTML = `
     <div class="ingredient-row">
-      <input type="text" class="ingredient-name" placeholder="Ingredient name" required>
+      <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+      <input type="hidden" class="ingredient-id">
       <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
       <input type="text" class="ingredient-unit" placeholder="Unit" required>
       <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
@@ -287,14 +407,47 @@ async function importRecipes() {
   }
 }
 
+// Helper function to attach ingredient autocomplete handler
+function attachIngredientAutocomplete(nameInput) {
+  nameInput.addEventListener('input', function() {
+    const row = this.closest('.ingredient-row');
+    const idInput = row.querySelector('.ingredient-id');
+    const value = this.value.trim();
+
+    // Find matching ingredient
+    const matchingIngredient = ingredients.find(ing =>
+      ing.name.toLowerCase() === value.toLowerCase()
+    );
+
+    if (matchingIngredient) {
+      idInput.value = matchingIngredient.id;
+    } else {
+      idInput.value = '';
+    }
+  });
+}
+
 // Event listeners
 document.getElementById('nav-recipes').addEventListener('click', () => showView('recipes'));
 document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
+document.getElementById('nav-ingredients').addEventListener('click', () => showView('ingredients'));
 document.getElementById('nav-cart').addEventListener('click', () => showView('cart'));
 document.getElementById('nav-shopping-list').addEventListener('click', () => showView('shopping-list'));
 document.getElementById('nav-export-import').addEventListener('click', () => showView('export-import'));
 
-document.getElementById('add-ingredient-btn').addEventListener('click', addIngredientRow);
+document.getElementById('add-ingredient-btn').addEventListener('click', () => {
+  addIngredientRow();
+  // Attach autocomplete to the newly added row
+  const rows = document.querySelectorAll('.ingredient-row');
+  const lastRow = rows[rows.length - 1];
+  attachIngredientAutocomplete(lastRow.querySelector('.ingredient-name'));
+});
+
+// Add ingredient form
+document.getElementById('ingredient-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await addIngredient();
+});
 
 document.getElementById('cancel-recipe-btn').addEventListener('click', () => {
   clearRecipeForm();
@@ -310,18 +463,49 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
   const instructions = document.getElementById('recipe-instructions').value;
 
   const ingredientRows = document.querySelectorAll('.ingredient-row');
-  const ingredients = Array.from(ingredientRows).map(row => ({
-    name: row.querySelector('.ingredient-name').value,
-    quantity: parseFloat(row.querySelector('.ingredient-quantity').value),
-    unit: row.querySelector('.ingredient-unit').value
-  }));
+  const ingredientsData = [];
 
-  if (ingredients.length === 0) {
+  for (const row of ingredientRows) {
+    const nameInput = row.querySelector('.ingredient-name');
+    const idInput = row.querySelector('.ingredient-id');
+    const quantityInput = row.querySelector('.ingredient-quantity');
+    const unitInput = row.querySelector('.ingredient-unit');
+
+    const ingredientName = nameInput.value.trim();
+    const quantity = parseFloat(quantityInput.value);
+    const unit = unitInput.value.trim();
+
+    if (!ingredientName || !quantity || !unit) {
+      alert('Please fill in all ingredient fields');
+      return;
+    }
+
+    // Get or create ingredient
+    let ingredientId = idInput.value;
+    if (!ingredientId) {
+      // Check if ingredient exists
+      let ingredient = ingredients.find(ing => ing.name.toLowerCase() === ingredientName.toLowerCase());
+      if (!ingredient) {
+        // Create new ingredient
+        ingredient = await createIngredientAPI(ingredientName);
+        await fetchIngredients(); // Refresh ingredients list
+      }
+      ingredientId = ingredient.id;
+    }
+
+    ingredientsData.push({
+      ingredient_id: parseInt(ingredientId),
+      quantity,
+      unit
+    });
+  }
+
+  if (ingredientsData.length === 0) {
     alert('Please add at least one ingredient');
     return;
   }
 
-  await createRecipe({ name, servings, prep_time, instructions, ingredients });
+  await createRecipe({ name, servings, prep_time, instructions, ingredients: ingredientsData });
   clearRecipeForm();
   showView('recipes');
 });
@@ -336,3 +520,12 @@ document.getElementById('import-file').addEventListener('change', (e) => {
 // Initialize
 fetchRecipes();
 fetchCart();
+fetchIngredients();
+
+// Attach autocomplete to initial ingredient row
+document.addEventListener('DOMContentLoaded', () => {
+  const initialRow = document.querySelector('.ingredient-row');
+  if (initialRow) {
+    attachIngredientAutocomplete(initialRow.querySelector('.ingredient-name'));
+  }
+});
