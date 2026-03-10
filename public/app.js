@@ -417,6 +417,7 @@ function attachIngredientAutocomplete(nameInput) {
   const row = nameInput.closest('.ingredient-row');
   const idInput = row.querySelector('.ingredient-id');
   let dropdown = row.querySelector('.autocomplete-dropdown');
+  let selectedIndex = -1;
 
   // Create dropdown if it doesn't exist
   if (!dropdown) {
@@ -425,13 +426,13 @@ function attachIngredientAutocomplete(nameInput) {
     nameInput.parentElement.appendChild(dropdown);
   }
 
-  // Input event handler
-  nameInput.addEventListener('input', function() {
-    const value = this.value.trim();
+  function updateDropdown() {
+    const value = nameInput.value.trim();
 
     if (!value) {
       dropdown.style.display = 'none';
       idInput.value = '';
+      selectedIndex = -1;
       return;
     }
 
@@ -461,20 +462,67 @@ function attachIngredientAutocomplete(nameInput) {
     if (html) {
       dropdown.innerHTML = html;
       dropdown.style.display = 'block';
+      selectedIndex = -1;
 
       // Add click handlers to items
       dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
         item.addEventListener('click', function() {
-          const name = this.dataset.name;
-          const id = this.dataset.id;
-
-          nameInput.value = name;
-          idInput.value = id || '';
-          dropdown.style.display = 'none';
+          selectItem(this);
         });
       });
     } else {
       dropdown.style.display = 'none';
+    }
+  }
+
+  function selectItem(item) {
+    const name = item.dataset.name;
+    const id = item.dataset.id;
+
+    nameInput.value = name;
+    idInput.value = id || '';
+    dropdown.style.display = 'none';
+    selectedIndex = -1;
+  }
+
+  function highlightItem(index) {
+    const items = dropdown.querySelectorAll('.autocomplete-item');
+    items.forEach((item, i) => {
+      if (i === index) {
+        item.classList.add('selected');
+        item.scrollIntoView({ block: 'nearest' });
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+  }
+
+  // Input event handler
+  nameInput.addEventListener('input', updateDropdown);
+
+  // Keyboard navigation
+  nameInput.addEventListener('keydown', function(e) {
+    if (dropdown.style.display === 'none') return;
+
+    const items = dropdown.querySelectorAll('.autocomplete-item');
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+      highlightItem(selectedIndex);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+      highlightItem(selectedIndex);
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && selectedIndex < items.length) {
+        e.preventDefault();
+        selectItem(items[selectedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+      selectedIndex = -1;
     }
   });
 
@@ -482,13 +530,14 @@ function attachIngredientAutocomplete(nameInput) {
   document.addEventListener('click', function(e) {
     if (!nameInput.contains(e.target) && !dropdown.contains(e.target)) {
       dropdown.style.display = 'none';
+      selectedIndex = -1;
     }
   });
 
   // Show dropdown when focusing
   nameInput.addEventListener('focus', function() {
     if (this.value.trim()) {
-      this.dispatchEvent(new Event('input'));
+      updateDropdown();
     }
   });
 }
