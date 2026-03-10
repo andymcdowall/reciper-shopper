@@ -1,0 +1,17 @@
+{
+  "name": "recipe-shopper",
+  "version": "1.0.0",
+  "description": "Recipe management and shopping list aggregator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": ["recipe", "shopping", "meal-planning"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.2.2"
+  }
+}

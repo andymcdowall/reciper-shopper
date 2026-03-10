@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  recipe-shopper:
+    build: .
+    container_name: recipe-shopper
+    ports:
+      - "3000:3000"
+    volumes:
+      - recipe-data:/app/data
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/recipes.db
+    restart: unless-stopped
+
+volumes:
+  recipe-data:
+    driver: local
