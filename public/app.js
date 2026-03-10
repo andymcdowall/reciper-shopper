@@ -68,6 +68,10 @@ async function createIngredientAPI(name) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name })
   });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create ingredient');
+  }
   return await response.json();
 }
 
@@ -240,9 +244,13 @@ async function addIngredient() {
 
   if (!name) return;
 
-  await createIngredientAPI(name);
-  nameInput.value = '';
-  await fetchIngredients();
+  try {
+    await createIngredientAPI(name);
+    nameInput.value = '';
+    await fetchIngredients();
+  } catch (error) {
+    alert('Failed to add ingredient: ' + error.message);
+  }
 }
 
 function editIngredient(id) {
