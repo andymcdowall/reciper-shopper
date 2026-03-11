@@ -173,6 +173,46 @@
     </main>
   </div>
 
+  <!-- Add Unit Modal -->
+  <div id="add-unit-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add New Unit</h3>
+        <button class="modal-close" onclick="closeAddUnitModal()">&times;</button>
+      </div>
+      <form id="add-unit-modal-form">
+        <div class="form-group">
+          <label for="modal-unit-name">Unit Name *</label>
+          <input type="text" id="modal-unit-name" required>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-category">Category *</label>
+          <select id="modal-unit-category" required>
+            <option value="">Select category...</option>
+            <option value="volume">Volume</option>
+            <option value="mass">Mass</option>
+            <option value="length">Length</option>
+            <option value="count">Count</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-base">Base Unit (optional)</label>
+          <select id="modal-unit-base">
+            <option value="">None (this is a base unit)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-factor">Conversion Factor</label>
+          <input type="number" id="modal-unit-factor" step="0.000001" placeholder="How many base units equal 1 of this unit">
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Add Unit</button>
+          <button type="button" class="btn-secondary" onclick="closeAddUnitModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

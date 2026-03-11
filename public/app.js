@@ -987,17 +987,80 @@ function attachUnitAutocomplete(unitNameInput) {
       </div>`;
     },
 
-    renderAddNew: null,  // Don't allow adding new units from recipe form
+    renderAddNew: (value) => {
+      const exactMatch = units.some(u => u.name.toLowerCase() === value.toLowerCase());
+      if (!exactMatch && value.trim()) {
+        return `<div class="autocomplete-item add-new" data-name="${value}" data-is-new="true">
+          <span class="item-icon">+</span> Add "${value}"
+        </div>`;
+      }
+      return null;
+    },
 
     onSelect: (data, input, hiddenInput) => {
-      input.value = data.name;
-      if (hiddenInput) {
-        hiddenInput.value = data.id || '';
+      if (data.isNew === 'true') {
+        // Open modal to add new unit
+        openAddUnitModal(data.name, unitNameInput, unitIdInput);
+      } else {
+        input.value = data.name;
+        if (hiddenInput) {
+          hiddenInput.value = data.id || '';
+        }
       }
     },
 
     hiddenInput: unitIdInput
   });
+}
+
+// Modal functions for adding units from recipe form
+let modalTargetInputs = { nameInput: null, idInput: null };
+
+function openAddUnitModal(unitName, nameInput, idInput) {
+  const modal = document.getElementById('add-unit-modal');
+  const form = document.getElementById('add-unit-modal-form');
+
+  // Pre-fill unit name
+  document.getElementById('modal-unit-name').value = unitName;
+
+  // Store reference to inputs so we can update them after creation
+  modalTargetInputs = { nameInput, idInput };
+
+  // Show modal
+  modal.classList.add('show');
+  modal.style.display = 'flex';
+
+  // Focus on category field
+  document.getElementById('modal-unit-category').focus();
+}
+
+function closeAddUnitModal() {
+  const modal = document.getElementById('add-unit-modal');
+  const form = document.getElementById('add-unit-modal-form');
+
+  // Hide modal
+  modal.classList.remove('show');
+  modal.style.display = 'none';
+
+  // Reset form
+  form.reset();
+
+  // Clear target inputs reference
+  modalTargetInputs = { nameInput: null, idInput: null };
+}
+
+function updateModalBaseUnitDropdown() {
+  const select = document.getElementById('modal-unit-base');
+  const category = document.getElementById('modal-unit-category').value;
+
+  if (!category) {
+    select.innerHTML = '<option value="">None (this is a base unit)</option>';
+    return;
+  }
+
+  const baseUnits = units.filter(u => u.base_unit_id === null && u.category === category);
+  select.innerHTML = '<option value="">None (this is a base unit)</option>' +
+    baseUnits.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
 }
 
 // Event listeners
@@ -1102,6 +1165,50 @@ document.getElementById('export-btn').addEventListener('click', exportRecipes);
 document.getElementById('import-btn').addEventListener('click', importRecipes);
 document.getElementById('import-file').addEventListener('change', (e) => {
   document.getElementById('import-btn').disabled = !e.target.files[0];
+});
+
+// Modal event listeners
+document.getElementById('modal-unit-category').addEventListener('change', updateModalBaseUnitDropdown);
+document.getElementById('add-unit-modal-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById('modal-unit-name').value.trim();
+  const category = document.getElementById('modal-unit-category').value;
+  const base_unit_id = document.getElementById('modal-unit-base').value;
+  const to_base_factor = document.getElementById('modal-unit-factor').value;
+
+  if (!name || !category) {
+    alert('Unit name and category are required');
+    return;
+  }
+
+  if (base_unit_id && !to_base_factor) {
+    alert('Conversion factor is required when base unit is selected');
+    return;
+  }
+
+  try {
+    const newUnit = await createUnitAPI(
+      name,
+      category,
+      base_unit_id ? parseInt(base_unit_id) : null,
+      to_base_factor ? parseFloat(to_base_factor) : null
+    );
+
+    // Refresh units list
+    await fetchUnits();
+
+    // Update the target inputs if they exist
+    if (modalTargetInputs.nameInput && modalTargetInputs.idInput) {
+      modalTargetInputs.nameInput.value = newUnit.name;
+      modalTargetInputs.idInput.value = newUnit.id;
+    }
+
+    // Close modal
+    closeAddUnitModal();
+  } catch (error) {
+    alert('Failed to add unit: ' + error.message);
+  }
 });
 
 // Initialize
