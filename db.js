@@ -65,6 +65,13 @@ db.exec(`
   );
 `);
 
+// Migrations
+try {
+  db.exec(`ALTER TABLE units ADD COLUMN rounding_increment REAL`);
+} catch (e) {
+  // Column already exists
+}
+
 // Recipe queries
 const getAllRecipes = db.prepare('SELECT * FROM recipes ORDER BY created_at DESC');
 
@@ -124,12 +131,12 @@ const getUnitsByCategory = db.prepare('SELECT * FROM units WHERE category = ? OR
 const getBaseUnits = db.prepare('SELECT * FROM units WHERE base_unit_id IS NULL ORDER BY category ASC');
 
 const createUnit = db.prepare(`
-  INSERT INTO units (name, category, base_unit_id, to_base_factor)
-  VALUES (@name, @category, @base_unit_id, @to_base_factor)
+  INSERT INTO units (name, category, base_unit_id, to_base_factor, rounding_increment)
+  VALUES (@name, @category, @base_unit_id, @to_base_factor, @rounding_increment)
 `);
 
 const updateUnit = db.prepare(`
-  UPDATE units SET name = @name, category = @category, base_unit_id = @base_unit_id, to_base_factor = @to_base_factor
+  UPDATE units SET name = @name, category = @category, base_unit_id = @base_unit_id, to_base_factor = @to_base_factor, rounding_increment = @rounding_increment
   WHERE id = @id
 `);
 
@@ -220,7 +227,8 @@ function getOrCreateUnit(name, category, base_unit_id, to_base_factor) {
       name,
       category,
       base_unit_id: base_unit_id || null,
-      to_base_factor: to_base_factor || null
+      to_base_factor: to_base_factor || null,
+      rounding_increment: null
     });
     unit = getUnitById.get(result.lastInsertRowid);
   }
@@ -363,9 +371,16 @@ function getAggregatedShoppingList() {
 
     const targetUnit = getUnitById.get(targetUnitId);
     if (targetUnit) {
+      let displayQuantity = totalQuantity;
+      if (targetUnit.rounding_increment && targetUnit.rounding_increment > 0) {
+        displayQuantity = Math.round(totalQuantity / targetUnit.rounding_increment) * targetUnit.rounding_increment;
+        // Fix floating-point precision (e.g. 0.25 increments)
+        const precision = (targetUnit.rounding_increment.toString().split('.')[1] || '').length;
+        displayQuantity = parseFloat(displayQuantity.toFixed(precision + 2));
+      }
       result.push({
         name: group.name,
-        quantity: totalQuantity,
+        quantity: displayQuantity,
         unit: targetUnit.name
       });
     }

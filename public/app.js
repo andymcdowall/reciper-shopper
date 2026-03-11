@@ -105,11 +105,11 @@ async function fetchUnits() {
   units = await response.json();
 }
 
-async function createUnitAPI(name, category, base_unit_id, to_base_factor) {
+async function createUnitAPI(name, category, base_unit_id, to_base_factor, rounding_increment) {
   const response = await fetch('/api/units', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, category, base_unit_id, to_base_factor })
+    body: JSON.stringify({ name, category, base_unit_id, to_base_factor, rounding_increment })
   });
   if (!response.ok) {
     const error = await response.json();
@@ -118,11 +118,11 @@ async function createUnitAPI(name, category, base_unit_id, to_base_factor) {
   return await response.json();
 }
 
-async function updateUnitAPI(id, name, category, base_unit_id, to_base_factor) {
+async function updateUnitAPI(id, name, category, base_unit_id, to_base_factor, rounding_increment) {
   const response = await fetch(`/api/units/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, category, base_unit_id, to_base_factor })
+    body: JSON.stringify({ name, category, base_unit_id, to_base_factor, rounding_increment })
   });
   return await response.json();
 }
@@ -312,6 +312,7 @@ function renderUnits() {
     const conversionText = baseUnit
       ? `1 ${unit.name} = ${unit.to_base_factor} ${baseUnit.name}`
       : 'Base unit';
+    const roundingText = unit.rounding_increment ? `Rounds to nearest ${unit.rounding_increment}` : '';
 
     return `
     <div class="unit-card" data-id="${unit.id}">
@@ -319,7 +320,7 @@ function renderUnits() {
         <div class="unit-name" id="unit-name-${unit.id}">${unit.name}</div>
         <span class="unit-category-badge ${unit.category}">${unit.category}</span>
       </div>
-      <div class="unit-conversion" id="unit-conv-${unit.id}">${conversionText}</div>
+      <div class="unit-conversion" id="unit-conv-${unit.id}">${conversionText}${roundingText ? ` &middot; ${roundingText}` : ''}</div>
       <div class="unit-edit-form" id="unit-edit-${unit.id}" style="display: none;">
         <input type="text" id="unit-edit-name-${unit.id}" value="${unit.name}">
         <select id="unit-edit-category-${unit.id}">
@@ -335,6 +336,7 @@ function renderUnits() {
           `).join('')}
         </select>
         <input type="number" id="unit-edit-factor-${unit.id}" value="${unit.to_base_factor || ''}" placeholder="Conversion factor" step="0.000001">
+        <input type="number" id="unit-edit-rounding-${unit.id}" value="${unit.rounding_increment || ''}" placeholder="Rounding (e.g. 0.25, 1)" step="0.000001" min="0">
       </div>
       <div class="unit-actions">
         <button onclick="editUnit(${unit.id})" class="btn-secondary btn-small" id="unit-edit-btn-${unit.id}">Edit</button>
@@ -507,6 +509,7 @@ async function addUnit() {
   const category = document.getElementById('new-unit-category').value;
   const base_unit_id = document.getElementById('new-unit-base').value;
   const to_base_factor = document.getElementById('new-unit-factor').value;
+  const rounding_increment = document.getElementById('new-unit-rounding').value;
 
   if (!name || !category) {
     alert('Unit name and category are required');
@@ -523,12 +526,14 @@ async function addUnit() {
       name,
       category,
       base_unit_id ? parseInt(base_unit_id) : null,
-      to_base_factor ? parseFloat(to_base_factor) : null
+      to_base_factor ? parseFloat(to_base_factor) : null,
+      rounding_increment ? parseFloat(rounding_increment) : null
     );
     document.getElementById('new-unit-name').value = '';
     document.getElementById('new-unit-category').value = '';
     document.getElementById('new-unit-base').value = '';
     document.getElementById('new-unit-factor').value = '';
+    document.getElementById('new-unit-rounding').value = '';
     await fetchUnits();
     renderUnits();
   } catch (error) {
@@ -551,6 +556,7 @@ async function saveUnit(id) {
   const category = document.getElementById(`unit-edit-category-${id}`).value;
   const base_unit_id = document.getElementById(`unit-edit-base-${id}`).value;
   const to_base_factor = document.getElementById(`unit-edit-factor-${id}`).value;
+  const rounding_increment = document.getElementById(`unit-edit-rounding-${id}`).value;
 
   if (!name || !category) {
     alert('Unit name and category cannot be empty');
@@ -562,7 +568,8 @@ async function saveUnit(id) {
     name,
     category,
     base_unit_id ? parseInt(base_unit_id) : null,
-    to_base_factor ? parseFloat(to_base_factor) : null
+    to_base_factor ? parseFloat(to_base_factor) : null,
+    rounding_increment ? parseFloat(rounding_increment) : null
   );
   editingUnitId = null;
   await fetchUnits();
@@ -998,7 +1005,7 @@ function attachUnitAutocomplete(unitNameInput) {
     },
 
     onSelect: (data, input, hiddenInput) => {
-      if (data.isNew === 'true') {
+      if (data['is-new'] === 'true') {
         // Open modal to add new unit
         openAddUnitModal(data.name, unitNameInput, unitIdInput);
       } else {
@@ -1176,6 +1183,7 @@ document.getElementById('add-unit-modal-form').addEventListener('submit', async 
   const category = document.getElementById('modal-unit-category').value;
   const base_unit_id = document.getElementById('modal-unit-base').value;
   const to_base_factor = document.getElementById('modal-unit-factor').value;
+  const rounding_increment = document.getElementById('modal-unit-rounding').value;
 
   if (!name || !category) {
     alert('Unit name and category are required');
@@ -1192,7 +1200,8 @@ document.getElementById('add-unit-modal-form').addEventListener('submit', async 
       name,
       category,
       base_unit_id ? parseInt(base_unit_id) : null,
-      to_base_factor ? parseFloat(to_base_factor) : null
+      to_base_factor ? parseFloat(to_base_factor) : null,
+      rounding_increment ? parseFloat(rounding_increment) : null
     );
 
     // Refresh units list

@@ -311,7 +311,15 @@ app.post('/api/units', (req, res) => {
       return res.status(400).json({ error: 'to_base_factor is required when base_unit_id is provided' });
     }
 
-    const unit = getOrCreateUnit(name.trim(), category, base_unit_id || null, to_base_factor || null);
+    const { rounding_increment } = req.body;
+    const result = createUnit.run({
+      name: name.trim(),
+      category,
+      base_unit_id: base_unit_id || null,
+      to_base_factor: to_base_factor || null,
+      rounding_increment: rounding_increment || null
+    });
+    const unit = getUnitById.get(result.lastInsertRowid);
     res.status(201).json(unit);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -320,7 +328,7 @@ app.post('/api/units', (req, res) => {
 
 app.put('/api/units/:id', (req, res) => {
   try {
-    const { name, category, base_unit_id, to_base_factor } = req.body;
+    const { name, category, base_unit_id, to_base_factor, rounding_increment } = req.body;
 
     if (!name || !name.trim() || !category) {
       return res.status(400).json({ error: 'Unit name and category are required' });
@@ -336,7 +344,8 @@ app.put('/api/units/:id', (req, res) => {
       name: name.trim(),
       category,
       base_unit_id: base_unit_id || null,
-      to_base_factor: to_base_factor || null
+      to_base_factor: to_base_factor || null,
+      rounding_increment: rounding_increment || null
     });
 
     const updated = getUnitById.get(req.params.id);
