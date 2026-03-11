@@ -1,0 +1,193 @@
+{
+  "version": "3.0",
+  "description": "Common units with natural conversions and ingredient-specific conversions",
+  "units": [
+    {
+      "name": "ml",
+      "category": "volume",
+      "base_unit_name": null,
+      "to_base_factor": 1
+    },
+    {
+      "name": "l",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 1000
+    },
+    {
+      "name": "tsp",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 4.92892
+    },
+    {
+      "name": "tbsp",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 14.7868
+    },
+    {
+      "name": "cup",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 236.588
+    },
+    {
+      "name": "fl oz",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 29.5735
+    },
+    {
+      "name": "pint",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 473.176
+    },
+    {
+      "name": "quart",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 946.353
+    },
+    {
+      "name": "gallon",
+      "category": "volume",
+      "base_unit_name": "ml",
+      "to_base_factor": 3785.41
+    },
+    {
+      "name": "g",
+      "category": "mass",
+      "base_unit_name": null,
+      "to_base_factor": 1
+    },
+    {
+      "name": "kg",
+      "category": "mass",
+      "base_unit_name": "g",
+      "to_base_factor": 1000
+    },
+    {
+      "name": "mg",
+      "category": "mass",
+      "base_unit_name": "g",
+      "to_base_factor": 0.001
+    },
+    {
+      "name": "oz",
+      "category": "mass",
+      "base_unit_name": "g",
+      "to_base_factor": 28.3495
+    },
+    {
+      "name": "lb",
+      "category": "mass",
+      "base_unit_name": "g",
+      "to_base_factor": 453.592
+    },
+    {
+      "name": "cm",
+      "category": "length",
+      "base_unit_name": null,
+      "to_base_factor": 1
+    },
+    {
+      "name": "x",
+      "category": "count",
+      "base_unit_name": null,
+      "to_base_factor": 1
+    },
+    {
+      "name": "dozen",
+      "category": "count",
+      "base_unit_name": "x",
+      "to_base_factor": 12
+    }
+  ],
+  "ingredients": [
+    {
+      "name": "water",
+      "preferred_unit_name": "ml"
+    },
+    {
+      "name": "all-purpose flour",
+      "preferred_unit_name": "g"
+    },
+    {
+      "name": "granulated sugar",
+      "preferred_unit_name": "g"
+    },
+    {
+      "name": "butter",
+      "preferred_unit_name": "g"
+    },
+    {
+      "name": "honey",
+      "preferred_unit_name": "ml"
+    }
+  ],
+  "ingredient_conversions": [
+    {
+      "ingredient_name": "water",
+      "from_unit_name": "ml",
+      "to_unit_name": "g",
+      "factor": 1
+    },
+    {
+      "ingredient_name": "water",
+      "from_unit_name": "g",
+      "to_unit_name": "ml",
+      "factor": 1
+    },
+    {
+      "ingredient_name": "all-purpose flour",
+      "from_unit_name": "ml",
+      "to_unit_name": "g",
+      "factor": 0.593
+    },
+    {
+      "ingredient_name": "all-purpose flour",
+      "from_unit_name": "g",
+      "to_unit_name": "ml",
+      "factor": 1.686341
+    },
+    {
+      "ingredient_name": "granulated sugar",
+      "from_unit_name": "ml",
+      "to_unit_name": "g",
+      "factor": 0.845
+    },
+    {
+      "ingredient_name": "granulated sugar",
+      "from_unit_name": "g",
+      "to_unit_name": "ml",
+      "factor": 1.183432
+    },
+    {
+      "ingredient_name": "butter",
+      "from_unit_name": "ml",
+      "to_unit_name": "g",
+      "factor": 0.911
+    },
+    {
+      "ingredient_name": "butter",
+      "from_unit_name": "g",
+      "to_unit_name": "ml",
+      "factor": 1.097695
+    },
+    {
+      "ingredient_name": "honey",
+      "from_unit_name": "ml",
+      "to_unit_name": "g",
+      "factor": 1.42
+    },
+    {
+      "ingredient_name": "honey",
+      "from_unit_name": "g",
+      "to_unit_name": "ml",
+      "factor": 0.704225
+    }
+  ],
+  "recipes": []
+}

@@ -14,6 +14,7 @@
         <button id="nav-recipes" class="nav-btn active">Recipes</button>
         <button id="nav-add-recipe" class="nav-btn">Add Recipe</button>
         <button id="nav-ingredients" class="nav-btn">Ingredients</button>
+        <button id="nav-units" class="nav-btn">Units</button>
         <button id="nav-cart" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
         <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
         <button id="nav-export-import" class="nav-btn">Export/Import</button>
@@ -56,7 +57,10 @@
                 </div>
                 <input type="hidden" class="ingredient-id">
                 <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
-                <input type="text" class="ingredient-unit" placeholder="Unit" required>
+                <div class="unit-container">
+                  <input type="text" class="unit-name" placeholder="Unit" required autocomplete="off">
+                </div>
+                <input type="hidden" class="unit-id">
                 <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
               </div>
             </div>
@@ -87,6 +91,31 @@
         </div>
 
         <div id="ingredients-grid" class="ingredients-grid"></div>
+      </section>
+
+      <!-- Units View -->
+      <section id="units-view" class="view">
+        <h2>Units</h2>
+
+        <div class="unit-add-section">
+          <form id="unit-form" class="unit-add-form">
+            <input type="text" id="new-unit-name" placeholder="Unit name..." required>
+            <select id="new-unit-category" required>
+              <option value="">Select category...</option>
+              <option value="volume">Volume</option>
+              <option value="mass">Mass</option>
+              <option value="length">Length</option>
+              <option value="count">Count</option>
+            </select>
+            <select id="new-unit-base">
+              <option value="">Base unit (optional)</option>
+            </select>
+            <input type="number" id="new-unit-factor" placeholder="Conversion factor" step="0.000001">
+            <button type="submit" class="btn-primary">Add Unit</button>
+          </form>
+        </div>
+
+        <div id="units-grid" class="units-grid"></div>
       </section>
 
       <!-- Cart View -->
