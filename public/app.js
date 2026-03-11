@@ -412,16 +412,56 @@ async function importRecipes() {
   }
 }
 
-// Generic autocomplete dropdown helper
+/**
+ * Generic autocomplete dropdown helper
+ *
+ * @param {HTMLInputElement} input - The input element to attach autocomplete to
+ * @param {Object} options - Configuration options
+ * @param {Array|Function} options.dataSource - Array of items or function returning array
+ * @param {Function} options.filterFn - Filter function: (items, value) => filtered items
+ * @param {Function} options.renderItem - Render function: (item) => html string
+ * @param {Function} [options.renderAddNew] - Optional render "add new": (value, matches) => html string or null
+ * @param {Function} options.onSelect - Selection callback: (data, input, hiddenInput) => void
+ * @param {HTMLInputElement} [options.hiddenInput] - Optional hidden input for storing ID
+ * @returns {Object} { updateDropdown, dropdown }
+ *
+ * @example
+ * // Simple autocomplete with countries
+ * const countries = ['USA', 'Canada', 'Mexico', 'France', 'Germany'];
+ * createAutocomplete(countryInput, {
+ *   dataSource: countries,
+ *   filterFn: (items, value) => items.filter(c => c.toLowerCase().includes(value.toLowerCase())),
+ *   renderItem: (country) => `<div class="autocomplete-item" data-name="${country}">${country}</div>`,
+ *   onSelect: (data, input) => { input.value = data.name; }
+ * });
+ *
+ * @example
+ * // Autocomplete with IDs and "add new" option
+ * createAutocomplete(userInput, {
+ *   dataSource: () => users, // Dynamic data source
+ *   filterFn: (items, value) => items.filter(u => u.email.includes(value)),
+ *   renderItem: (user) => `<div class="autocomplete-item" data-id="${user.id}" data-email="${user.email}">
+ *     ${user.name} (${user.email})
+ *   </div>`,
+ *   renderAddNew: (value) => `<div class="autocomplete-item add-new" data-email="${value}">
+ *     <span class="item-icon">+</span> Invite "${value}"
+ *   </div>`,
+ *   onSelect: (data, input, hiddenInput) => {
+ *     input.value = data.email;
+ *     if (hiddenInput) hiddenInput.value = data.id || '';
+ *   },
+ *   hiddenInput: document.getElementById('user-id')
+ * });
+ */
 function createAutocomplete(input, options) {
   const {
-    dataSource,           // Array or function that returns array of items
-    filterFn,             // Function to filter items: (items, value) => filtered items
-    renderItem,           // Function to render each item: (item) => html string
-    renderAddNew,         // Optional function to render "add new" option: (value) => html string or null
-    onSelect,             // Callback when item selected: (item, input) => void
-    hiddenInput,          // Optional hidden input for storing ID
-    containerSelector     // Optional selector to find container (for positioning)
+    dataSource,
+    filterFn,
+    renderItem,
+    renderAddNew,
+    onSelect,
+    hiddenInput,
+    containerSelector
   } = options;
 
   let dropdown = input.parentElement.querySelector('.autocomplete-dropdown');
