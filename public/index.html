@@ -13,6 +13,7 @@
       <nav>
         <button id="nav-recipes" class="nav-btn active">Recipes</button>
         <button id="nav-add-recipe" class="nav-btn">Add Recipe</button>
+        <button id="nav-ingredients" class="nav-btn">Ingredients</button>
         <button id="nav-cart" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
         <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
         <button id="nav-export-import" class="nav-btn">Export/Import</button>
@@ -50,7 +51,10 @@
             <label>Ingredients *</label>
             <div id="ingredients-list">
               <div class="ingredient-row">
-                <input type="text" class="ingredient-name" placeholder="Ingredient name" required>
+                <div class="ingredient-name-container">
+                  <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off">
+                </div>
+                <input type="hidden" class="ingredient-id">
                 <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
                 <input type="text" class="ingredient-unit" placeholder="Unit" required>
                 <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
@@ -69,6 +73,20 @@
             <button type="button" id="cancel-recipe-btn" class="btn-secondary">Cancel</button>
           </div>
         </form>
+      </section>
+
+      <!-- Ingredients View -->
+      <section id="ingredients-view" class="view">
+        <h2>Ingredients</h2>
+
+        <div class="ingredient-add-section">
+          <form id="ingredient-form" class="ingredient-add-form">
+            <input type="text" id="new-ingredient-name" placeholder="Add new ingredient..." required>
+            <button type="submit" class="btn-primary">Add</button>
+          </form>
+        </div>
+
+        <div id="ingredients-grid" class="ingredients-grid"></div>
       </section>
 
       <!-- Cart View -->

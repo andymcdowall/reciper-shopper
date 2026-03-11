@@ -31,8 +31,21 @@ const {
   removeFromCart,
   getAggregatedShoppingList,
   getAllRecipesWithIngredients,
-  deleteAllRecipes
+  deleteAllRecipes,
+  getOrCreateIngredient
 } = require('../db');
+
+// Helper function to convert ingredient names to IDs
+function prepareIngredientsWithIds(ingredients) {
+  return ingredients.map(ing => {
+    const ingredient = getOrCreateIngredient(ing.name);
+    return {
+      ingredient_id: ingredient.id,
+      quantity: ing.quantity,
+      unit: ing.unit
+    };
+  });
+}
 
 afterAll(() => {
   // Clean up test database
@@ -66,10 +79,10 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: 'Test instructions',
-        ingredients: [
+        ingredients: prepareIngredientsWithIds([
           { name: 'flour', quantity: 2, unit: 'cups' },
           { name: 'sugar', quantity: 1, unit: 'cup' }
-        ]
+        ])
       });
 
       const recipe = getRecipeWithIngredients(recipeId);
@@ -86,7 +99,7 @@ describe('API Integration Tests', () => {
         servings: 2,
         prep_time: 15,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       createRecipeWithIngredients({
@@ -94,7 +107,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'sugar', quantity: 2, unit: 'cups' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'sugar', quantity: 2, unit: 'cups' }])
       });
 
       const recipes = getAllRecipes.all();
@@ -112,7 +125,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       const result = deleteRecipe.run(recipeId);
@@ -135,7 +148,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       addToCart.run(recipeId);
@@ -151,7 +164,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       addToCart.run(recipeId);
@@ -167,7 +180,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       addToCart.run(recipeId);
@@ -190,10 +203,10 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [
+        ingredients: prepareIngredientsWithIds([
           { name: 'flour', quantity: 2, unit: 'cups' },
           { name: 'flour', quantity: 500, unit: 'grams' }
-        ]
+        ])
       });
 
       addToCart.run(recipeId);
@@ -211,10 +224,10 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [
+        ingredients: prepareIngredientsWithIds([
           { name: 'flour', quantity: 2, unit: 'cups' },
           { name: 'sugar', quantity: 1, unit: 'cup' }
-        ]
+        ])
       });
 
       const recipe2Id = createRecipeWithIngredients({
@@ -222,10 +235,10 @@ describe('API Integration Tests', () => {
         servings: 2,
         prep_time: 15,
         instructions: '',
-        ingredients: [
+        ingredients: prepareIngredientsWithIds([
           { name: 'flour', quantity: 1, unit: 'cups' },
           { name: 'eggs', quantity: 2, unit: 'whole' }
-        ]
+        ])
       });
 
       addToCart.run(recipe1Id);
@@ -253,7 +266,7 @@ describe('API Integration Tests', () => {
           servings: 4,
           prep_time: 30,
           instructions: '',
-          ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+          ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
         },
         {
           name: 'Valid Recipe',
@@ -289,7 +302,10 @@ describe('API Integration Tests', () => {
           continue;
         }
 
-        createRecipeWithIngredients(recipe);
+        createRecipeWithIngredients({
+          ...recipe,
+          ingredients: prepareIngredientsWithIds(recipe.ingredients)
+        });
         imported++;
       }
 
@@ -329,7 +345,10 @@ describe('API Integration Tests', () => {
           continue;
         }
 
-        createRecipeWithIngredients(recipe);
+        createRecipeWithIngredients({
+          ...recipe,
+          ingredients: prepareIngredientsWithIds(recipe.ingredients)
+        });
         imported++;
       }
 
@@ -343,7 +362,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: 'Test',
-        ingredients: [{ name: 'flour', quantity: 2, unit: 'cups' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 2, unit: 'cups' }])
       });
 
       const exported = getAllRecipesWithIngredients();
@@ -359,7 +378,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       // Simulate import
@@ -389,7 +408,10 @@ describe('API Integration Tests', () => {
         if (existingNames.has(recipe.name.toLowerCase())) {
           skipped++;
         } else {
-          createRecipeWithIngredients(recipe);
+          createRecipeWithIngredients({
+            ...recipe,
+            ingredients: prepareIngredientsWithIds(recipe.ingredients)
+          });
           imported++;
         }
       }
@@ -407,7 +429,7 @@ describe('API Integration Tests', () => {
         servings: 4,
         prep_time: 30,
         instructions: '',
-        ingredients: [{ name: 'flour', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
       });
 
       // Simulate overwrite
@@ -418,7 +440,7 @@ describe('API Integration Tests', () => {
         servings: 2,
         prep_time: 15,
         instructions: '',
-        ingredients: [{ name: 'sugar', quantity: 1, unit: 'cup' }]
+        ingredients: prepareIngredientsWithIds([{ name: 'sugar', quantity: 1, unit: 'cup' }])
       });
 
       const recipes = getAllRecipes.all();

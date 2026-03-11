@@ -1,7 +1,9 @@
 // State
 let recipes = [];
 let cartRecipes = [];
+let ingredients = [];
 let currentView = 'recipes';
+let editingIngredientId = null;
 
 // API functions
 async function fetchRecipes() {
@@ -50,6 +52,39 @@ async function fetchShoppingList() {
   const response = await fetch('/api/shopping-list');
   const items = await response.json();
   renderShoppingList(items);
+}
+
+// Ingredient API functions
+async function fetchIngredients() {
+  const response = await fetch('/api/ingredients');
+  ingredients = await response.json();
+  renderIngredients();
+}
+
+async function createIngredientAPI(name) {
+  const response = await fetch('/api/ingredients', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create ingredient');
+  }
+  return await response.json();
+}
+
+async function updateIngredientAPI(id, name) {
+  const response = await fetch(`/api/ingredients/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  return await response.json();
+}
+
+async function deleteIngredientAPI(id) {
+  await fetch(`/api/ingredients/${id}`, { method: 'DELETE' });
 }
 
 // Rendering functions
@@ -122,6 +157,29 @@ function renderShoppingList(items) {
   `;
 }
 
+function renderIngredients() {
+  const container = document.getElementById('ingredients-grid');
+
+  if (ingredients.length === 0) {
+    container.innerHTML = '<p class="empty-state">No ingredients yet. Add your first ingredient!</p>';
+    return;
+  }
+
+  container.innerHTML = ingredients.map(ing => `
+    <div class="ingredient-card" data-id="${ing.id}">
+      <div class="ingredient-name" id="ing-name-${ing.id}">${ing.name}</div>
+      <input type="text" class="ingredient-edit-input" id="ing-edit-${ing.id}" value="${ing.name}" style="display: none;">
+      <div class="ingredient-actions">
+        <button onclick="editIngredient(${ing.id})" class="btn-secondary btn-small" id="ing-edit-btn-${ing.id}">Edit</button>
+        <button onclick="saveIngredient(${ing.id})" class="btn-primary btn-small" id="ing-save-btn-${ing.id}" style="display: none;">Save</button>
+        <button onclick="cancelEditIngredient(${ing.id})" class="btn-secondary btn-small" id="ing-cancel-btn-${ing.id}" style="display: none;">Cancel</button>
+        <button onclick="deleteIngredient(${ing.id})" class="btn-danger btn-small">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+
 // View management
 function showView(viewName) {
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
@@ -134,10 +192,14 @@ function showView(viewName) {
 
   if (viewName === 'recipes') {
     fetchRecipes();
+  } else if (viewName === 'add-recipe') {
+    fetchIngredients(); // Ensure ingredients are loaded for autocomplete
   } else if (viewName === 'cart') {
     fetchCart();
   } else if (viewName === 'shopping-list') {
     fetchShoppingList();
+  } else if (viewName === 'ingredients') {
+    fetchIngredients();
   } else if (viewName === 'export-import') {
     // Clear any previous import results
     document.getElementById('import-result').innerHTML = '';
@@ -168,13 +230,75 @@ async function deleteRecipe(id) {
   await fetchRecipes();
 }
 
+// Ingredient actions
+async function addIngredient() {
+  const nameInput = document.getElementById('new-ingredient-name');
+  const name = nameInput.value.trim();
+
+  if (!name) return;
+
+  try {
+    await createIngredientAPI(name);
+    nameInput.value = '';
+    await fetchIngredients();
+  } catch (error) {
+    alert('Failed to add ingredient: ' + error.message);
+  }
+}
+
+function editIngredient(id) {
+  editingIngredientId = id;
+  document.getElementById(`ing-name-${id}`).style.display = 'none';
+  document.getElementById(`ing-edit-${id}`).style.display = 'block';
+  document.getElementById(`ing-edit-btn-${id}`).style.display = 'none';
+  document.getElementById(`ing-save-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-cancel-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-edit-${id}`).focus();
+}
+
+async function saveIngredient(id) {
+  const newName = document.getElementById(`ing-edit-${id}`).value.trim();
+
+  if (!newName) {
+    alert('Ingredient name cannot be empty');
+    return;
+  }
+
+  await updateIngredientAPI(id, newName);
+  editingIngredientId = null;
+  await fetchIngredients();
+  await fetchRecipes(); // Refresh recipes to show updated ingredient names
+}
+
+function cancelEditIngredient(id) {
+  editingIngredientId = null;
+  const ingredient = ingredients.find(ing => ing.id === id);
+  document.getElementById(`ing-edit-${id}`).value = ingredient.name;
+  document.getElementById(`ing-name-${id}`).style.display = 'block';
+  document.getElementById(`ing-edit-${id}`).style.display = 'none';
+  document.getElementById(`ing-edit-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`ing-save-btn-${id}`).style.display = 'none';
+  document.getElementById(`ing-cancel-btn-${id}`).style.display = 'none';
+}
+
+async function deleteIngredient(id) {
+  if (!confirm('Are you sure you want to delete this ingredient? It will be removed from all recipes that use it.')) return;
+
+  await deleteIngredientAPI(id);
+  await fetchIngredients();
+  await fetchRecipes(); // Refresh recipes in case any were affected
+}
+
 // Form handling
 function addIngredientRow() {
   const container = document.getElementById('ingredients-list');
   const row = document.createElement('div');
   row.className = 'ingredient-row';
   row.innerHTML = `
-    <input type="text" class="ingredient-name" placeholder="Ingredient name" required>
+    <div class="ingredient-name-container">
+      <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off">
+    </div>
+    <input type="hidden" class="ingredient-id">
     <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
     <input type="text" class="ingredient-unit" placeholder="Unit" required>
     <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
@@ -196,7 +320,8 @@ function clearRecipeForm() {
   const container = document.getElementById('ingredients-list');
   container.innerHTML = `
     <div class="ingredient-row">
-      <input type="text" class="ingredient-name" placeholder="Ingredient name" required>
+      <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+      <input type="hidden" class="ingredient-id">
       <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
       <input type="text" class="ingredient-unit" placeholder="Unit" required>
       <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
@@ -287,14 +412,250 @@ async function importRecipes() {
   }
 }
 
+/**
+ * Generic autocomplete dropdown helper
+ *
+ * @param {HTMLInputElement} input - The input element to attach autocomplete to
+ * @param {Object} options - Configuration options
+ * @param {Array|Function} options.dataSource - Array of items or function returning array
+ * @param {Function} options.filterFn - Filter function: (items, value) => filtered items
+ * @param {Function} options.renderItem - Render function: (item) => html string
+ * @param {Function} [options.renderAddNew] - Optional render "add new": (value, matches) => html string or null
+ * @param {Function} options.onSelect - Selection callback: (data, input, hiddenInput) => void
+ * @param {HTMLInputElement} [options.hiddenInput] - Optional hidden input for storing ID
+ * @returns {Object} { updateDropdown, dropdown }
+ *
+ * @example
+ * // Simple autocomplete with countries
+ * const countries = ['USA', 'Canada', 'Mexico', 'France', 'Germany'];
+ * createAutocomplete(countryInput, {
+ *   dataSource: countries,
+ *   filterFn: (items, value) => items.filter(c => c.toLowerCase().includes(value.toLowerCase())),
+ *   renderItem: (country) => `<div class="autocomplete-item" data-name="${country}">${country}</div>`,
+ *   onSelect: (data, input) => { input.value = data.name; }
+ * });
+ *
+ * @example
+ * // Autocomplete with IDs and "add new" option
+ * createAutocomplete(userInput, {
+ *   dataSource: () => users, // Dynamic data source
+ *   filterFn: (items, value) => items.filter(u => u.email.includes(value)),
+ *   renderItem: (user) => `<div class="autocomplete-item" data-id="${user.id}" data-email="${user.email}">
+ *     ${user.name} (${user.email})
+ *   </div>`,
+ *   renderAddNew: (value) => `<div class="autocomplete-item add-new" data-email="${value}">
+ *     <span class="item-icon">+</span> Invite "${value}"
+ *   </div>`,
+ *   onSelect: (data, input, hiddenInput) => {
+ *     input.value = data.email;
+ *     if (hiddenInput) hiddenInput.value = data.id || '';
+ *   },
+ *   hiddenInput: document.getElementById('user-id')
+ * });
+ */
+function createAutocomplete(input, options) {
+  const {
+    dataSource,
+    filterFn,
+    renderItem,
+    renderAddNew,
+    onSelect,
+    hiddenInput,
+    containerSelector
+  } = options;
+
+  let dropdown = input.parentElement.querySelector('.autocomplete-dropdown');
+  let selectedIndex = -1;
+
+  // Create dropdown if it doesn't exist
+  if (!dropdown) {
+    dropdown = document.createElement('div');
+    dropdown.className = 'autocomplete-dropdown';
+    input.parentElement.appendChild(dropdown);
+  }
+
+  function updateDropdown() {
+    const value = input.value.trim();
+
+    if (!value) {
+      dropdown.style.display = 'none';
+      if (hiddenInput) hiddenInput.value = '';
+      selectedIndex = -1;
+      return;
+    }
+
+    // Get data source (can be array or function)
+    const data = typeof dataSource === 'function' ? dataSource() : dataSource;
+
+    // Filter items
+    const matches = filterFn ? filterFn(data, value) : data;
+
+    // Build dropdown content
+    let html = '';
+
+    // Render matching items
+    matches.forEach(item => {
+      html += renderItem(item);
+    });
+
+    // Add "add new" option if provided
+    if (renderAddNew) {
+      const addNewHtml = renderAddNew(value, matches);
+      if (addNewHtml) html += addNewHtml;
+    }
+
+    if (html) {
+      dropdown.innerHTML = html;
+      dropdown.style.display = 'block';
+      selectedIndex = -1;
+
+      // Add click handlers to items
+      dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
+        item.addEventListener('click', function() {
+          selectItem(this);
+        });
+      });
+    } else {
+      dropdown.style.display = 'none';
+    }
+  }
+
+  function selectItem(itemElement) {
+    // Parse data from element
+    const data = {};
+    Array.from(itemElement.attributes).forEach(attr => {
+      if (attr.name.startsWith('data-')) {
+        data[attr.name.substring(5)] = attr.value;
+      }
+    });
+
+    onSelect(data, input, hiddenInput);
+    dropdown.style.display = 'none';
+    selectedIndex = -1;
+  }
+
+  function highlightItem(index) {
+    const items = dropdown.querySelectorAll('.autocomplete-item');
+    items.forEach((item, i) => {
+      if (i === index) {
+        item.classList.add('selected');
+        item.scrollIntoView({ block: 'nearest' });
+      } else {
+        item.classList.remove('selected');
+      }
+    });
+  }
+
+  // Input event handler
+  input.addEventListener('input', updateDropdown);
+
+  // Keyboard navigation
+  input.addEventListener('keydown', function(e) {
+    if (dropdown.style.display === 'none') return;
+
+    const items = dropdown.querySelectorAll('.autocomplete-item');
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+      highlightItem(selectedIndex);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+      highlightItem(selectedIndex);
+    } else if (e.key === 'Enter') {
+      if (selectedIndex >= 0 && selectedIndex < items.length) {
+        e.preventDefault();
+        selectItem(items[selectedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      dropdown.style.display = 'none';
+      selectedIndex = -1;
+    }
+  });
+
+  // Hide dropdown when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = 'none';
+      selectedIndex = -1;
+    }
+  });
+
+  // Show dropdown when focusing
+  input.addEventListener('focus', function() {
+    if (this.value.trim()) {
+      updateDropdown();
+    }
+  });
+
+  return { updateDropdown, dropdown };
+}
+
+// Helper function to attach ingredient autocomplete handler
+function attachIngredientAutocomplete(nameInput) {
+  const row = nameInput.closest('.ingredient-row');
+  const idInput = row.querySelector('.ingredient-id');
+
+  createAutocomplete(nameInput, {
+    dataSource: () => ingredients,
+
+    filterFn: (items, value) => {
+      return items.filter(ing =>
+        ing.name.toLowerCase().includes(value.toLowerCase())
+      );
+    },
+
+    renderItem: (ing) => {
+      return `<div class="autocomplete-item" data-id="${ing.id}" data-name="${ing.name}">
+        <span class="item-icon">✓</span> ${ing.name}
+      </div>`;
+    },
+
+    renderAddNew: (value, matches) => {
+      // Only show "Add new" if no exact match exists
+      const exactMatch = matches.find(ing => ing.name.toLowerCase() === value.toLowerCase());
+      if (!exactMatch) {
+        return `<div class="autocomplete-item add-new" data-name="${value}">
+          <span class="item-icon">+</span> Add "${value}"
+        </div>`;
+      }
+      return null;
+    },
+
+    onSelect: (data, input, hiddenInput) => {
+      input.value = data.name;
+      if (hiddenInput) {
+        hiddenInput.value = data.id || '';
+      }
+    },
+
+    hiddenInput: idInput
+  });
+}
+
 // Event listeners
 document.getElementById('nav-recipes').addEventListener('click', () => showView('recipes'));
 document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
+document.getElementById('nav-ingredients').addEventListener('click', () => showView('ingredients'));
 document.getElementById('nav-cart').addEventListener('click', () => showView('cart'));
 document.getElementById('nav-shopping-list').addEventListener('click', () => showView('shopping-list'));
 document.getElementById('nav-export-import').addEventListener('click', () => showView('export-import'));
 
-document.getElementById('add-ingredient-btn').addEventListener('click', addIngredientRow);
+document.getElementById('add-ingredient-btn').addEventListener('click', () => {
+  addIngredientRow();
+  // Attach autocomplete to the newly added row
+  const rows = document.querySelectorAll('.ingredient-row');
+  const lastRow = rows[rows.length - 1];
+  attachIngredientAutocomplete(lastRow.querySelector('.ingredient-name'));
+});
+
+// Add ingredient form
+document.getElementById('ingredient-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await addIngredient();
+});
 
 document.getElementById('cancel-recipe-btn').addEventListener('click', () => {
   clearRecipeForm();
@@ -310,18 +671,49 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
   const instructions = document.getElementById('recipe-instructions').value;
 
   const ingredientRows = document.querySelectorAll('.ingredient-row');
-  const ingredients = Array.from(ingredientRows).map(row => ({
-    name: row.querySelector('.ingredient-name').value,
-    quantity: parseFloat(row.querySelector('.ingredient-quantity').value),
-    unit: row.querySelector('.ingredient-unit').value
-  }));
+  const ingredientsData = [];
 
-  if (ingredients.length === 0) {
+  for (const row of ingredientRows) {
+    const nameInput = row.querySelector('.ingredient-name');
+    const idInput = row.querySelector('.ingredient-id');
+    const quantityInput = row.querySelector('.ingredient-quantity');
+    const unitInput = row.querySelector('.ingredient-unit');
+
+    const ingredientName = nameInput.value.trim();
+    const quantity = parseFloat(quantityInput.value);
+    const unit = unitInput.value.trim();
+
+    if (!ingredientName || !quantity || !unit) {
+      alert('Please fill in all ingredient fields');
+      return;
+    }
+
+    // Get or create ingredient
+    let ingredientId = idInput.value;
+    if (!ingredientId) {
+      // Check if ingredient exists
+      let ingredient = ingredients.find(ing => ing.name.toLowerCase() === ingredientName.toLowerCase());
+      if (!ingredient) {
+        // Create new ingredient
+        ingredient = await createIngredientAPI(ingredientName);
+        await fetchIngredients(); // Refresh ingredients list
+      }
+      ingredientId = ingredient.id;
+    }
+
+    ingredientsData.push({
+      ingredient_id: parseInt(ingredientId),
+      quantity,
+      unit
+    });
+  }
+
+  if (ingredientsData.length === 0) {
     alert('Please add at least one ingredient');
     return;
   }
 
-  await createRecipe({ name, servings, prep_time, instructions, ingredients });
+  await createRecipe({ name, servings, prep_time, instructions, ingredients: ingredientsData });
   clearRecipeForm();
   showView('recipes');
 });
@@ -336,3 +728,12 @@ document.getElementById('import-file').addEventListener('change', (e) => {
 // Initialize
 fetchRecipes();
 fetchCart();
+fetchIngredients();
+
+// Attach autocomplete to initial ingredient row
+document.addEventListener('DOMContentLoaded', () => {
+  const initialRow = document.querySelector('.ingredient-row');
+  if (initialRow) {
+    attachIngredientAutocomplete(initialRow.querySelector('.ingredient-name'));
+  }
+});

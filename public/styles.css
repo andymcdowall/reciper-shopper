@@ -166,6 +166,59 @@ textarea {
   margin-bottom: 0.5rem;
 }
 
+.ingredient-name-container {
+  position: relative;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: none;
+}
+
+.autocomplete-item {
+  padding: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background-color: #e8f4fd;
+}
+
+.autocomplete-item .item-icon {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.autocomplete-item:not(.add-new) .item-icon {
+  color: #27ae60;
+}
+
+.autocomplete-item.add-new {
+  border-top: 1px solid #eee;
+  color: #e67e22;
+  font-weight: 500;
+}
+
+.autocomplete-item.add-new .item-icon {
+  color: #e67e22;
+}
+
 #ingredients-list {
   margin-bottom: 1rem;
 }
@@ -360,8 +413,69 @@ button:disabled:hover {
   background: #3498db;
 }
 
+/* Ingredients View Styles */
+.ingredient-add-section {
+  margin-bottom: 2rem;
+}
+
+.ingredient-add-form {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 600px;
+}
+
+.ingredient-add-form input {
+  flex: 1;
+}
+
+.ingredients-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.ingredient-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ingredient-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.ingredient-edit-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.ingredient-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn-small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 768px) {
   .recipes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ingredients-grid {
     grid-template-columns: 1fr;
   }
 
