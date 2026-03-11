@@ -259,6 +259,37 @@ function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
     if (reverseConversion) {
       return quantity / reverseConversion.factor;
     }
+
+    // Try chained conversion via ingredient-specific conversion + natural conversion
+    // e.g., g → ml (ingredient) → tbsp (natural)
+    if (fromUnit.category !== toUnit.category) {
+      for (const conv of conversions) {
+        // Try fromUnit → intermediate → toUnit
+        if (conv.from_unit_id === fromUnitId) {
+          const intermediateUnit = getUnitById.get(conv.to_unit_id);
+          if (intermediateUnit && intermediateUnit.category === toUnit.category) {
+            try {
+              const intermediateQuantity = quantity * conv.factor;
+              return convertUnits(conv.to_unit_id, toUnitId, intermediateQuantity, null); // No ingredient for natural conversion
+            } catch (e) {
+              // Try next conversion
+            }
+          }
+        }
+        // Try fromUnit → intermediate (reverse) → toUnit
+        if (conv.to_unit_id === fromUnitId) {
+          const intermediateUnit = getUnitById.get(conv.from_unit_id);
+          if (intermediateUnit && intermediateUnit.category === toUnit.category) {
+            try {
+              const intermediateQuantity = quantity / conv.factor;
+              return convertUnits(conv.from_unit_id, toUnitId, intermediateQuantity, null);
+            } catch (e) {
+              // Try next conversion
+            }
+          }
+        }
+      }
+    }
   }
 
   // Natural conversion (via base units)
