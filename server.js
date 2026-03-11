@@ -21,6 +21,7 @@ const {
   updateIngredientPreferredUnit,
   getAllUnits,
   getUnitById,
+  getUnitByName,
   getOrCreateUnit,
   createUnit,
   updateUnit,
@@ -409,9 +410,11 @@ app.post('/api/import', (req, res) => {
     // Import units if provided (for v3.0 format)
     const unitMap = {}; // old ID -> new ID or name -> new ID
     if (importedUnits && Array.isArray(importedUnits)) {
-      // First pass: create base units (those without base_unit_id)
+      // First pass: create base units (those without base_unit_id or base_unit_name)
       for (const unit of importedUnits) {
-        if (unit.base_unit_id === null || unit.base_unit_id === undefined) {
+        const hasNoBaseUnit = (unit.base_unit_id === null || unit.base_unit_id === undefined) &&
+                              (unit.base_unit_name === null || unit.base_unit_name === undefined);
+        if (hasNoBaseUnit) {
           const created = getOrCreateUnit(unit.name, unit.category, null, null);
           if (unit.id !== undefined) {
             unitMap[unit.id] = created.id;
@@ -420,17 +423,42 @@ app.post('/api/import', (req, res) => {
         }
       }
 
-      // Second pass: create non-base units
+      // Second pass: create/update non-base units
       for (const unit of importedUnits) {
-        if (unit.base_unit_id !== null && unit.base_unit_id !== undefined) {
-          // Map the old base_unit_id to new base_unit_id
-          const newBaseUnitId = unitMap[unit.base_unit_id];
+        const hasBaseUnit = (unit.base_unit_id !== null && unit.base_unit_id !== undefined) ||
+                           (unit.base_unit_name !== null && unit.base_unit_name !== undefined);
+        if (hasBaseUnit) {
+          // Resolve base unit ID
+          let newBaseUnitId;
+          if (unit.base_unit_name) {
+            newBaseUnitId = unitMap[unit.base_unit_name.toLowerCase()];
+          } else if (unit.base_unit_id !== undefined && unit.base_unit_id !== null) {
+            newBaseUnitId = unitMap[unit.base_unit_id];
+          }
+
           if (newBaseUnitId) {
-            const created = getOrCreateUnit(unit.name, unit.category, newBaseUnitId, unit.to_base_factor);
-            if (unit.id !== undefined) {
-              unitMap[unit.id] = created.id;
+            // Check if unit already exists
+            const existing = getUnitByName.get(unit.name);
+            if (existing && existing.base_unit_id === null) {
+              // Update existing unit to set base_unit_id and to_base_factor
+              updateUnit.run({
+                id: existing.id,
+                name: unit.name,
+                category: unit.category,
+                base_unit_id: newBaseUnitId,
+                to_base_factor: unit.to_base_factor
+              });
+              if (unit.id !== undefined) {
+                unitMap[unit.id] = existing.id;
+              }
+              unitMap[unit.name.toLowerCase()] = existing.id;
+            } else if (!existing) {
+              const created = getOrCreateUnit(unit.name, unit.category, newBaseUnitId, unit.to_base_factor);
+              if (unit.id !== undefined) {
+                unitMap[unit.id] = created.id;
+              }
+              unitMap[unit.name.toLowerCase()] = created.id;
             }
-            unitMap[unit.name.toLowerCase()] = created.id;
           }
         }
       }

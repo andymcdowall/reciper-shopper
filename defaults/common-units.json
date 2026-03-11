@@ -6,7 +6,7 @@
       "name": "ml",
       "category": "volume",
       "base_unit_name": null,
-      "to_base_factor": 1
+      "to_base_factor": null
     },
     {
       "name": "l",
@@ -60,7 +60,7 @@
       "name": "g",
       "category": "mass",
       "base_unit_name": null,
-      "to_base_factor": 1
+      "to_base_factor": null
     },
     {
       "name": "kg",
@@ -90,13 +90,13 @@
       "name": "cm",
       "category": "length",
       "base_unit_name": null,
-      "to_base_factor": 1
+      "to_base_factor": null
     },
     {
       "name": "x",
       "category": "count",
       "base_unit_name": null,
-      "to_base_factor": 1
+      "to_base_factor": null
     },
     {
       "name": "dozen",
