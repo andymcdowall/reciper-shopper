@@ -412,51 +412,56 @@ async function importRecipes() {
   }
 }
 
-// Helper function to attach ingredient autocomplete handler
-function attachIngredientAutocomplete(nameInput) {
-  const row = nameInput.closest('.ingredient-row');
-  const idInput = row.querySelector('.ingredient-id');
-  let dropdown = row.querySelector('.autocomplete-dropdown');
+// Generic autocomplete dropdown helper
+function createAutocomplete(input, options) {
+  const {
+    dataSource,           // Array or function that returns array of items
+    filterFn,             // Function to filter items: (items, value) => filtered items
+    renderItem,           // Function to render each item: (item) => html string
+    renderAddNew,         // Optional function to render "add new" option: (value) => html string or null
+    onSelect,             // Callback when item selected: (item, input) => void
+    hiddenInput,          // Optional hidden input for storing ID
+    containerSelector     // Optional selector to find container (for positioning)
+  } = options;
+
+  let dropdown = input.parentElement.querySelector('.autocomplete-dropdown');
   let selectedIndex = -1;
 
   // Create dropdown if it doesn't exist
   if (!dropdown) {
     dropdown = document.createElement('div');
     dropdown.className = 'autocomplete-dropdown';
-    nameInput.parentElement.appendChild(dropdown);
+    input.parentElement.appendChild(dropdown);
   }
 
   function updateDropdown() {
-    const value = nameInput.value.trim();
+    const value = input.value.trim();
 
     if (!value) {
       dropdown.style.display = 'none';
-      idInput.value = '';
+      if (hiddenInput) hiddenInput.value = '';
       selectedIndex = -1;
       return;
     }
 
-    // Filter matching ingredients
-    const matches = ingredients.filter(ing =>
-      ing.name.toLowerCase().includes(value.toLowerCase())
-    );
+    // Get data source (can be array or function)
+    const data = typeof dataSource === 'function' ? dataSource() : dataSource;
+
+    // Filter items
+    const matches = filterFn ? filterFn(data, value) : data;
 
     // Build dropdown content
     let html = '';
 
-    // Add matching ingredients
-    matches.forEach(ing => {
-      html += `<div class="autocomplete-item" data-id="${ing.id}" data-name="${ing.name}">
-        <span class="item-icon">✓</span> ${ing.name}
-      </div>`;
+    // Render matching items
+    matches.forEach(item => {
+      html += renderItem(item);
     });
 
-    // Add "Add new" option only if no exact match exists
-    const exactMatch = matches.find(ing => ing.name.toLowerCase() === value.toLowerCase());
-    if (!exactMatch) {
-      html += `<div class="autocomplete-item add-new" data-name="${value}">
-        <span class="item-icon">+</span> Add "${value}"
-      </div>`;
+    // Add "add new" option if provided
+    if (renderAddNew) {
+      const addNewHtml = renderAddNew(value, matches);
+      if (addNewHtml) html += addNewHtml;
     }
 
     if (html) {
@@ -475,12 +480,16 @@ function attachIngredientAutocomplete(nameInput) {
     }
   }
 
-  function selectItem(item) {
-    const name = item.dataset.name;
-    const id = item.dataset.id;
+  function selectItem(itemElement) {
+    // Parse data from element
+    const data = {};
+    Array.from(itemElement.attributes).forEach(attr => {
+      if (attr.name.startsWith('data-')) {
+        data[attr.name.substring(5)] = attr.value;
+      }
+    });
 
-    nameInput.value = name;
-    idInput.value = id || '';
+    onSelect(data, input, hiddenInput);
     dropdown.style.display = 'none';
     selectedIndex = -1;
   }
@@ -498,10 +507,10 @@ function attachIngredientAutocomplete(nameInput) {
   }
 
   // Input event handler
-  nameInput.addEventListener('input', updateDropdown);
+  input.addEventListener('input', updateDropdown);
 
   // Keyboard navigation
-  nameInput.addEventListener('keydown', function(e) {
+  input.addEventListener('keydown', function(e) {
     if (dropdown.style.display === 'none') return;
 
     const items = dropdown.querySelectorAll('.autocomplete-item');
@@ -528,17 +537,61 @@ function attachIngredientAutocomplete(nameInput) {
 
   // Hide dropdown when clicking outside
   document.addEventListener('click', function(e) {
-    if (!nameInput.contains(e.target) && !dropdown.contains(e.target)) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
       dropdown.style.display = 'none';
       selectedIndex = -1;
     }
   });
 
   // Show dropdown when focusing
-  nameInput.addEventListener('focus', function() {
+  input.addEventListener('focus', function() {
     if (this.value.trim()) {
       updateDropdown();
     }
+  });
+
+  return { updateDropdown, dropdown };
+}
+
+// Helper function to attach ingredient autocomplete handler
+function attachIngredientAutocomplete(nameInput) {
+  const row = nameInput.closest('.ingredient-row');
+  const idInput = row.querySelector('.ingredient-id');
+
+  createAutocomplete(nameInput, {
+    dataSource: () => ingredients,
+
+    filterFn: (items, value) => {
+      return items.filter(ing =>
+        ing.name.toLowerCase().includes(value.toLowerCase())
+      );
+    },
+
+    renderItem: (ing) => {
+      return `<div class="autocomplete-item" data-id="${ing.id}" data-name="${ing.name}">
+        <span class="item-icon">✓</span> ${ing.name}
+      </div>`;
+    },
+
+    renderAddNew: (value, matches) => {
+      // Only show "Add new" if no exact match exists
+      const exactMatch = matches.find(ing => ing.name.toLowerCase() === value.toLowerCase());
+      if (!exactMatch) {
+        return `<div class="autocomplete-item add-new" data-name="${value}">
+          <span class="item-icon">+</span> Add "${value}"
+        </div>`;
+      }
+      return null;
+    },
+
+    onSelect: (data, input, hiddenInput) => {
+      input.value = data.name;
+      if (hiddenInput) {
+        hiddenInput.value = data.id || '';
+      }
+    },
+
+    hiddenInput: idInput
   });
 }
 
