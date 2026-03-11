@@ -235,88 +235,63 @@ function getOrCreateUnit(name, category, base_unit_id, to_base_factor) {
   return unit;
 }
 
-// Unit conversion function
+// Converts quantity within the same category via base units. Returns null if not possible.
+function tryNaturalConvert(fromUnitId, toUnitId, quantity) {
+  const fromUnit = getUnitById.get(fromUnitId);
+  const toUnit = getUnitById.get(toUnitId);
+  if (!fromUnit || !toUnit || fromUnit.category !== toUnit.category) return null;
+  const baseQuantity = fromUnit.base_unit_id ? quantity * fromUnit.to_base_factor : quantity;
+  return toUnit.base_unit_id ? baseQuantity / toUnit.to_base_factor : baseQuantity;
+}
+
+// Converts quantity from one unit to another, with optional ingredient-specific conversions.
+// Supports three conversion strategies (tried in order):
+//   1. Direct ingredient conversion (e.g. 1 cup butter = X g)
+//   2. Natural conversion within the same category via base units (e.g. tbsp → ml)
+//   3. Chained conversion: ingredient-specific cross-category step + natural step (e.g. g butter → ml → tbsp)
 function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
-  if (fromUnitId === toUnitId) {
-    return quantity;
-  }
+  if (fromUnitId === toUnitId) return quantity;
 
   const fromUnit = getUnitById.get(fromUnitId);
   const toUnit = getUnitById.get(toUnitId);
+  if (!fromUnit || !toUnit) throw new Error('Invalid unit IDs');
 
-  if (!fromUnit || !toUnit) {
-    throw new Error('Invalid unit IDs');
-  }
-
-  // Check for ingredient-specific conversion first
   if (ingredientId) {
     const conversions = getIngredientConversions.all(ingredientId);
 
-    // Direct conversion
-    const directConversion = conversions.find(c =>
-      c.from_unit_id === fromUnitId && c.to_unit_id === toUnitId
-    );
-    if (directConversion) {
-      return quantity * directConversion.factor;
-    }
+    // Strategy 1: direct ingredient conversion
+    const direct = conversions.find(c => c.from_unit_id === fromUnitId && c.to_unit_id === toUnitId);
+    if (direct) return quantity * direct.factor;
 
-    // Reverse conversion
-    const reverseConversion = conversions.find(c =>
-      c.from_unit_id === toUnitId && c.to_unit_id === fromUnitId
-    );
-    if (reverseConversion) {
-      return quantity / reverseConversion.factor;
-    }
+    const reverse = conversions.find(c => c.from_unit_id === toUnitId && c.to_unit_id === fromUnitId);
+    if (reverse) return quantity / reverse.factor;
 
-    // Try chained conversion via ingredient-specific conversion + natural conversion
-    // e.g., g → ml (ingredient) → tbsp (natural)
+    // Strategy 3: chained — use an ingredient conversion to reach the same category as toUnit,
+    // then use a natural conversion for the remainder (e.g. g butter → ml → tbsp)
     if (fromUnit.category !== toUnit.category) {
       for (const conv of conversions) {
-        // Try fromUnit → intermediate → toUnit
+        let intermediateUnitId, intermediateQuantity;
         if (conv.from_unit_id === fromUnitId) {
-          const intermediateUnit = getUnitById.get(conv.to_unit_id);
-          if (intermediateUnit && intermediateUnit.category === toUnit.category) {
-            try {
-              const intermediateQuantity = quantity * conv.factor;
-              return convertUnits(conv.to_unit_id, toUnitId, intermediateQuantity, null); // No ingredient for natural conversion
-            } catch (e) {
-              // Try next conversion
-            }
-          }
+          intermediateUnitId = conv.to_unit_id;
+          intermediateQuantity = quantity * conv.factor;
+        } else if (conv.to_unit_id === fromUnitId) {
+          intermediateUnitId = conv.from_unit_id;
+          intermediateQuantity = quantity / conv.factor;
+        } else {
+          continue;
         }
-        // Try fromUnit → intermediate (reverse) → toUnit
-        if (conv.to_unit_id === fromUnitId) {
-          const intermediateUnit = getUnitById.get(conv.from_unit_id);
-          if (intermediateUnit && intermediateUnit.category === toUnit.category) {
-            try {
-              const intermediateQuantity = quantity / conv.factor;
-              return convertUnits(conv.from_unit_id, toUnitId, intermediateQuantity, null);
-            } catch (e) {
-              // Try next conversion
-            }
-          }
-        }
+        const result = tryNaturalConvert(intermediateUnitId, toUnitId, intermediateQuantity);
+        if (result !== null) return result;
       }
     }
   }
 
-  // Natural conversion (via base units)
+  // Strategy 2: natural conversion within the same category
   if (fromUnit.category !== toUnit.category) {
     throw new Error(`Cannot convert between ${fromUnit.category} and ${toUnit.category} without ingredient-specific conversion`);
   }
-
-  // Convert to base unit
-  let baseQuantity = quantity;
-  if (fromUnit.base_unit_id !== null) {
-    baseQuantity = quantity * fromUnit.to_base_factor;
-  }
-
-  // Convert from base unit to target unit
-  if (toUnit.base_unit_id !== null) {
-    return baseQuantity / toUnit.to_base_factor;
-  }
-
-  return baseQuantity;
+  const baseQuantity = fromUnit.base_unit_id ? quantity * fromUnit.to_base_factor : quantity;
+  return toUnit.base_unit_id ? baseQuantity / toUnit.to_base_factor : baseQuantity;
 }
 
 function getAggregatedShoppingList() {
