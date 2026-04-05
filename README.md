@@ -171,4 +171,4 @@ recipe-shopper/
 
 ## License
 
-MIT
+None.
