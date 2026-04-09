@@ -1,7 +1,9 @@
 - [ ] Currently recipes are viewed in an alert. they should be viewed in a view similar to adding, except they are not editable by default; you have to hit the edit button, and it allows shows you the a ui similar to add (it should be reused)
-- [ ] Keep a list of ingredients, and autocomplete to an existing ingredient when possible. If not possible, option to add an ingredient
+- [ X ] Keep a list of ingredients, and autocomplete tPo an existing ingredient when possible. If not possible, option to add an ingredient
 - [ ] Unit should be dropdown of common options
 - [ ] Clear shopping cart
 - [ ] Add replacement options
 - [ ] Configure "staple" items. The shopping list will say "Ensure you have x amount of y at home."
-- [ ] Export/ import configuration (recipes, staple items, items)
+- [ X ] Export/ import configuration (recipes, staple items, items)
+- [ ] Settings page
+  - [ ] Rounding values. Maybe on ingredient level?

@@ -14,6 +14,7 @@
         <button id="nav-recipes" class="nav-btn active">Recipes</button>
         <button id="nav-add-recipe" class="nav-btn">Add Recipe</button>
         <button id="nav-ingredients" class="nav-btn">Ingredients</button>
+        <button id="nav-units" class="nav-btn">Units</button>
         <button id="nav-cart" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
         <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
         <button id="nav-export-import" class="nav-btn">Export/Import</button>
@@ -56,7 +57,10 @@
                 </div>
                 <input type="hidden" class="ingredient-id">
                 <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
-                <input type="text" class="ingredient-unit" placeholder="Unit" required>
+                <div class="unit-container">
+                  <input type="text" class="unit-name" placeholder="Unit" required autocomplete="off">
+                </div>
+                <input type="hidden" class="unit-id">
                 <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
               </div>
             </div>
@@ -87,6 +91,32 @@
         </div>
 
         <div id="ingredients-grid" class="ingredients-grid"></div>
+      </section>
+
+      <!-- Units View -->
+      <section id="units-view" class="view">
+        <h2>Units</h2>
+
+        <div class="unit-add-section">
+          <form id="unit-form" class="unit-add-form">
+            <input type="text" id="new-unit-name" placeholder="Unit name..." required>
+            <select id="new-unit-category" required>
+              <option value="">Select category...</option>
+              <option value="volume">Volume</option>
+              <option value="mass">Mass</option>
+              <option value="length">Length</option>
+              <option value="count">Count</option>
+            </select>
+            <select id="new-unit-base">
+              <option value="">Base unit (optional)</option>
+            </select>
+            <input type="number" id="new-unit-factor" placeholder="Conversion factor" step="0.000001">
+            <input type="number" id="new-unit-rounding" placeholder="Rounding (e.g. 0.25, 1)" step="0.000001" min="0">
+            <button type="submit" class="btn-primary">Add Unit</button>
+          </form>
+        </div>
+
+        <div id="units-grid" class="units-grid"></div>
       </section>
 
       <!-- Cart View -->
@@ -142,6 +172,50 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Add Unit Modal -->
+  <div id="add-unit-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add New Unit</h3>
+        <button class="modal-close" onclick="closeAddUnitModal()">&times;</button>
+      </div>
+      <form id="add-unit-modal-form">
+        <div class="form-group">
+          <label for="modal-unit-name">Unit Name *</label>
+          <input type="text" id="modal-unit-name" required>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-category">Category *</label>
+          <select id="modal-unit-category" required>
+            <option value="">Select category...</option>
+            <option value="volume">Volume</option>
+            <option value="mass">Mass</option>
+            <option value="length">Length</option>
+            <option value="count">Count</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-base">Base Unit (optional)</label>
+          <select id="modal-unit-base">
+            <option value="">None (this is a base unit)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-factor">Conversion Factor</label>
+          <input type="number" id="modal-unit-factor" step="0.000001" placeholder="How many base units equal 1 of this unit">
+        </div>
+        <div class="form-group">
+          <label for="modal-unit-rounding">Rounding Increment (optional)</label>
+          <input type="number" id="modal-unit-rounding" step="0.000001" min="0" placeholder="e.g. 0.25 for quarters, 1 for whole numbers">
+        </div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Add Unit</button>
+          <button type="button" class="btn-secondary" onclick="closeAddUnitModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script src="app.js"></script>
