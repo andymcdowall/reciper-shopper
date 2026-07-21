@@ -123,6 +123,11 @@ describe('Store & Cost UI Elements', () => {
     expect(document.getElementById('save-staleness-btn')).toBeTruthy();
   });
 
+  test('should have a reset-to-common-units control on the units view', () => {
+    expect(document.getElementById('reset-units-btn')).toBeTruthy();
+    expect(document.getElementById('reset-units-result')).toBeTruthy();
+  });
+
   test('should have a global store selector in the header', () => {
     const select = document.getElementById('global-store-select');
     expect(select).toBeTruthy();

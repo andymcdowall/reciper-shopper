@@ -143,6 +143,15 @@ async function deleteUnitAPI(id) {
   await fetch(`/api/units/${id}`, { method: 'DELETE' });
 }
 
+async function resetUnitsToCommonAPI() {
+  const response = await fetch('/api/units/reset-to-common', { method: 'POST' });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to reset units');
+  }
+  return await response.json();
+}
+
 // Ingredient conversion API functions
 async function fetchIngredientConversions(ingredientId) {
   const response = await fetch(`/api/ingredients/${ingredientId}/conversions`);
@@ -558,6 +567,7 @@ function showView(viewName) {
   } else if (viewName === 'ingredients') {
     Promise.all([fetchIngredients(), fetchUnits(), fetchStores()]).then(() => renderIngredients());
   } else if (viewName === 'units') {
+    document.getElementById('reset-units-result').innerHTML = '';
     fetchUnits().then(() => renderUnits());
   } else if (viewName === 'stores') {
     fetchStores().then(() => renderStores());
@@ -923,6 +933,30 @@ async function deleteUnit(id) {
     renderUnits();
   } catch (error) {
     alert('Failed to delete unit. It may be in use by recipes: ' + error.message);
+  }
+}
+
+async function resetUnitsToCommon() {
+  if (!confirm('This will delete any unit not currently used by a recipe or a price, and add the standard common units. Units still in use will be kept as-is. Continue?')) return;
+
+  const resultEl = document.getElementById('reset-units-result');
+
+  try {
+    const result = await resetUnitsToCommonAPI();
+
+    resultEl.innerHTML = `
+      <div class="success-message">
+        <strong>${result.message}</strong>
+        ${result.deleted.length ? `<div>Deleted: ${result.deleted.join(', ')}</div>` : ''}
+        ${result.skipped_in_use.length ? `<div>Kept (still in use): ${result.skipped_in_use.join(', ')}</div>` : ''}
+        ${result.seeded.length ? `<div>Added: ${result.seeded.join(', ')}</div>` : ''}
+      </div>
+    `;
+
+    await fetchUnits();
+    renderUnits();
+  } catch (error) {
+    resultEl.innerHTML = `<div class="error-message">Failed to reset units: ${error.message}</div>`;
   }
 }
 
@@ -1431,6 +1465,8 @@ document.getElementById('unit-form').addEventListener('submit', async (e) => {
 
 // Update base unit dropdown when category changes
 document.getElementById('new-unit-category').addEventListener('change', updateBaseUnitDropdown);
+
+document.getElementById('reset-units-btn').addEventListener('click', resetUnitsToCommon);
 
 // Add store form
 document.getElementById('store-form').addEventListener('submit', async (e) => {

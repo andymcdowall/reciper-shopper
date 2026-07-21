@@ -496,6 +496,30 @@ button:disabled:hover {
   flex-shrink: 0;
 }
 
+.unit-reset-section {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: #fdf2f2;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+}
+
+.unit-reset-hint {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0.5rem 0 0;
+}
+
+#reset-units-result {
+  margin-top: 0.75rem;
+}
+
+#reset-units-result .success-message div,
+#reset-units-result .error-message div {
+  font-size: 0.85rem;
+  margin-top: 0.35rem;
+}
+
 .units-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

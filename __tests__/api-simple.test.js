@@ -34,6 +34,8 @@ const {
   deleteAllRecipes,
   getOrCreateIngredient,
   getOrCreateUnit,
+  getInUseUnitIds,
+  deleteUnitsExcept,
   getOrCreateStore,
   updateStore,
   deleteStore,
@@ -771,6 +773,89 @@ describe('API Integration Tests', () => {
       setPriceStalenessDays(30);
       expect(getPriceStalenessDays()).toBe(30);
       setPriceStalenessDays(182); // restore default for any later tests relying on it
+    });
+  });
+
+  describe('Unit Reset Operations', () => {
+    test('getOrCreateUnit sets rounding_increment on creation', () => {
+      const unit = getOrCreateUnit('Reset Ops Rounded Unit', 'count', null, null, 0.5);
+      expect(unit.rounding_increment).toBe(0.5);
+    });
+
+    test('getInUseUnitIds includes a unit referenced directly by a recipe', () => {
+      const unit = getOrCreateUnit('Reset Ops Recipe Unit', 'count');
+      const ingredient = getOrCreateIngredient('Reset Ops Recipe Ingredient');
+
+      createRecipeWithIngredients({
+        name: 'Reset Ops Recipe A',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+
+      expect(getInUseUnitIds().has(unit.id)).toBe(true);
+    });
+
+    test('getInUseUnitIds includes a unit referenced directly by a price', () => {
+      const unit = getOrCreateUnit('Reset Ops Price Unit', 'count');
+      const ingredient = getOrCreateIngredient('Reset Ops Price Ingredient');
+      const store = getOrCreateStore('Reset Ops Price Store');
+
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 1.0, is_preferred: true
+      });
+
+      expect(getInUseUnitIds().has(unit.id)).toBe(true);
+    });
+
+    test('getInUseUnitIds transitively protects the base unit of an in-use derived unit', () => {
+      const base = getOrCreateUnit('Reset Ops Base Gram', 'mass');
+      const derived = getOrCreateUnit('Reset Ops Derived Kilo', 'mass', base.id, 1000);
+      const ingredient = getOrCreateIngredient('Reset Ops Transitive Ingredient');
+
+      createRecipeWithIngredients({
+        name: 'Reset Ops Recipe B',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: derived.id }]
+      });
+
+      const inUse = getInUseUnitIds();
+      expect(inUse.has(derived.id)).toBe(true);
+      expect(inUse.has(base.id)).toBe(true); // protected transitively, even though nothing references it directly
+    });
+
+    test('getInUseUnitIds excludes a unit nothing references', () => {
+      const unit = getOrCreateUnit('Reset Ops Unused Unit', 'count');
+      expect(getInUseUnitIds().has(unit.id)).toBe(false);
+    });
+
+    test('deleteUnitsExcept deletes only unprotected units and handles derived-before-base ordering', () => {
+      const base = getOrCreateUnit('Reset Ops Delete Base', 'volume');
+      const derived = getOrCreateUnit('Reset Ops Delete Derived', 'volume', base.id, 10);
+      const unrelated = getOrCreateUnit('Reset Ops Delete Unrelated', 'count');
+      const ingredient = getOrCreateIngredient('Reset Ops Delete Protected Ingredient');
+      const protectedUnit = getOrCreateUnit('Reset Ops Delete Protected', 'count');
+
+      createRecipeWithIngredients({
+        name: 'Reset Ops Recipe C',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: protectedUnit.id }]
+      });
+
+      const protectedIds = getInUseUnitIds();
+      expect(protectedIds.has(protectedUnit.id)).toBe(true);
+      expect(protectedIds.has(base.id)).toBe(false); // nothing uses these, should not be protected
+      expect(protectedIds.has(derived.id)).toBe(false);
+
+      const deletedNames = deleteUnitsExcept(protectedIds);
+
+      expect(deletedNames).toEqual(expect.arrayContaining([base.name, derived.name, unrelated.name]));
+      expect(deletedNames).not.toContain(protectedUnit.name);
+
+      const { getUnitById } = require('../db');
+      expect(getUnitById.get(base.id)).toBeUndefined();
+      expect(getUnitById.get(derived.id)).toBeUndefined();
+      expect(getUnitById.get(protectedUnit.id)).toBeDefined();
     });
   });
 });
