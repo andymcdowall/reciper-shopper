@@ -445,14 +445,17 @@ async function renderIngredients() {
           ${prices.length === 0 ? '<p style="font-size: 0.85rem; color: #999;">No prices yet</p>' : ''}
         </div>
         <div class="price-add-form" id="price-form-${ing.id}" style="display: none;">
-          <select id="price-store-${ing.id}">
-            <option value="">Store...</option>
-            ${stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-          </select>
-          <input type="number" id="price-pkg-qty-${ing.id}" placeholder="Package size" step="0.01" min="0">
+          ${(() => {
+            const defaultStoreId = getDefaultPriceFormStoreId(prices);
+            return `<select id="price-store-${ing.id}">
+              <option value="">Store...</option>
+              ${stores.map(s => `<option value="${s.id}" ${s.id === defaultStoreId ? 'selected' : ''}>${s.name}</option>`).join('')}
+            </select>`;
+          })()}
+          <input type="number" id="price-pkg-qty-${ing.id}" placeholder="Package size" step="0.01" min="0" value="1">
           <select id="price-pkg-unit-${ing.id}">
             <option value="">Unit...</option>
-            ${units.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
+            ${units.map(u => `<option value="${u.id}" ${u.id === ing.preferred_unit_id ? 'selected' : ''}>${u.name}</option>`).join('')}
           </select>
           <input type="number" id="price-value-${ing.id}" placeholder="Price" step="0.01" min="0">
           <button class="btn-primary btn-small" onclick="addPrice(${ing.id})">Add</button>
@@ -461,6 +464,26 @@ async function renderIngredients() {
     </div>
   `;
   }).join('');
+}
+
+// Store to preselect in an ingredient's Add Price form: the default store (global selected
+// store) if this ingredient doesn't already have a price there; otherwise the alphabetically
+// first store that doesn't have a price yet for this ingredient, nudging toward pricing it
+// somewhere new. Falls back to the default store (or nothing) if every store is already priced.
+function getDefaultPriceFormStoreId(prices) {
+  const pricedStoreIds = new Set(prices.map(p => p.store_id));
+
+  if (selectedStoreId && !pricedStoreIds.has(selectedStoreId)) {
+    return selectedStoreId;
+  }
+
+  const unpriced = stores
+    .filter(s => !pricedStoreIds.has(s.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (unpriced.length > 0) return unpriced[0].id;
+
+  return selectedStoreId || null;
 }
 
 function renderUnits() {

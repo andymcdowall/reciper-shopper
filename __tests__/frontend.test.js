@@ -415,6 +415,65 @@ describe('Cost Summary Rendering Logic', () => {
   });
 });
 
+describe('Default Price Form Store Logic', () => {
+  // Mirrors getDefaultPriceFormStoreId() in public/app.js
+  function getDefaultPriceFormStoreId(prices, stores, selectedStoreId) {
+    const pricedStoreIds = new Set(prices.map(p => p.store_id));
+
+    if (selectedStoreId && !pricedStoreIds.has(selectedStoreId)) {
+      return selectedStoreId;
+    }
+
+    const unpriced = stores
+      .filter(s => !pricedStoreIds.has(s.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (unpriced.length > 0) return unpriced[0].id;
+
+    return selectedStoreId || null;
+  }
+
+  const stores = [
+    { id: 1, name: 'Zeus Market' },
+    { id: 2, name: 'Acme Grocery' },
+    { id: 3, name: 'Bodega Blue' }
+  ];
+
+  test('defaults to the selected store when this ingredient has no price there yet', () => {
+    const result = getDefaultPriceFormStoreId([], stores, 1);
+    expect(result).toBe(1);
+  });
+
+  test('falls back to the alphabetically first unpriced store when the selected store is already priced', () => {
+    const prices = [{ store_id: 1 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(2); // Acme Grocery, alphabetically before Bodega Blue
+  });
+
+  test('skips stores that already have a price, not just the selected one', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(3); // Bodega Blue, the only remaining unpriced store
+  });
+
+  test('falls back to the selected store when every store already has a price', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }, { store_id: 3 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(1);
+  });
+
+  test('picks the alphabetically first store when no default store is selected', () => {
+    const result = getDefaultPriceFormStoreId([], stores, null);
+    expect(result).toBe(2); // Acme Grocery
+  });
+
+  test('returns null when nothing is selected and every store is already priced', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }, { store_id: 3 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, null);
+    expect(result).toBeNull();
+  });
+});
+
 describe('Shopping List Aggregation Logic', () => {
   test('should aggregate ingredients by name and unit', () => {
     // This tests the actual aggregation logic from getAggregatedShoppingList
