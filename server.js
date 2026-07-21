@@ -28,7 +28,25 @@ const {
   deleteUnit,
   getIngredientConversions,
   createIngredientConversion,
-  deleteIngredientConversion
+  deleteIngredientConversion,
+  getAllStores,
+  getStoreById,
+  getOrCreateStore,
+  updateStore,
+  deleteStore,
+  getPricesByIngredientId,
+  getPricesByStoreId,
+  getPriceById,
+  createPriceOption,
+  updatePriceOption,
+  setPreferredPrice,
+  deletePriceOption,
+  getSelectedStoreId,
+  setSelectedStoreId,
+  getPriceStalenessDays,
+  setPriceStalenessDays,
+  getRecipeCost,
+  getAggregatedCartCost
 } = require('./db');
 
 const app = express();
@@ -367,6 +385,241 @@ app.delete('/api/units/:id', (req, res) => {
   }
 });
 
+// Store routes
+app.get('/api/stores', (req, res) => {
+  try {
+    const stores = getAllStores.all();
+    res.json(stores);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/stores', (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Store name is required' });
+    }
+
+    const store = getOrCreateStore(name.trim());
+    res.status(201).json(store);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/stores/:id', (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Store name is required' });
+    }
+
+    const existing = getStoreById.get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+
+    updateStore.run({ id: req.params.id, name: name.trim() });
+    const updated = getStoreById.get(req.params.id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/stores/:id', (req, res) => {
+  try {
+    const result = deleteStore.run(req.params.id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Store not found' });
+    }
+    res.json({ message: 'Store deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/stores/:id/prices', (req, res) => {
+  try {
+    const prices = getPricesByStoreId.all(req.params.id);
+    res.json(prices);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Price routes
+app.get('/api/ingredients/:id/prices', (req, res) => {
+  try {
+    const prices = getPricesByIngredientId.all(req.params.id);
+    res.json(prices);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/ingredients/:id/prices', (req, res) => {
+  try {
+    const { store_id, package_quantity, package_unit_id, price, is_preferred } = req.body;
+
+    if (!store_id || !package_unit_id || typeof package_quantity !== 'number' || package_quantity <= 0 ||
+        typeof price !== 'number' || price < 0) {
+      return res.status(400).json({ error: 'store_id, package_unit_id, a positive package_quantity, and a non-negative price are required' });
+    }
+
+    const existingIngredient = getIngredientById.get(req.params.id);
+    if (!existingIngredient) {
+      return res.status(404).json({ error: 'Ingredient not found' });
+    }
+
+    const store = getStoreById.get(store_id);
+    if (!store) {
+      return res.status(400).json({ error: 'Invalid store_id' });
+    }
+
+    const unit = getUnitById.get(package_unit_id);
+    if (!unit) {
+      return res.status(400).json({ error: 'Invalid package_unit_id' });
+    }
+
+    const created = createPriceOption({
+      ingredient_id: req.params.id,
+      store_id,
+      package_quantity,
+      package_unit_id,
+      price,
+      is_preferred: !!is_preferred
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/prices/:priceId', (req, res) => {
+  try {
+    const { package_quantity, package_unit_id, price } = req.body;
+
+    if (!package_unit_id || typeof package_quantity !== 'number' || package_quantity <= 0 ||
+        typeof price !== 'number' || price < 0) {
+      return res.status(400).json({ error: 'package_unit_id, a positive package_quantity, and a non-negative price are required' });
+    }
+
+    const existing = getPriceById.get(req.params.priceId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Price not found' });
+    }
+
+    const unit = getUnitById.get(package_unit_id);
+    if (!unit) {
+      return res.status(400).json({ error: 'Invalid package_unit_id' });
+    }
+
+    const updated = updatePriceOption(req.params.priceId, { package_quantity, package_unit_id, price });
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/prices/:priceId/preferred', (req, res) => {
+  try {
+    const existing = getPriceById.get(req.params.priceId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Price not found' });
+    }
+
+    const updated = setPreferredPrice(req.params.priceId);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/prices/:priceId', (req, res) => {
+  try {
+    const result = deletePriceOption(req.params.priceId);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Price not found' });
+    }
+    res.json({ message: 'Price deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cost routes
+app.get('/api/recipes/:id/cost', (req, res) => {
+  try {
+    const storeId = req.query.store_id ? parseInt(req.query.store_id, 10) : getSelectedStoreId();
+    if (!storeId) {
+      return res.status(400).json({ error: 'No store selected' });
+    }
+
+    const cost = getRecipeCost(req.params.id, storeId);
+    if (!cost) {
+      return res.status(404).json({ error: 'Recipe not found' });
+    }
+    res.json(cost);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/shopping-list/cost', (req, res) => {
+  try {
+    const storeId = req.query.store_id ? parseInt(req.query.store_id, 10) : getSelectedStoreId();
+    if (!storeId) {
+      return res.status(400).json({ error: 'No store selected' });
+    }
+
+    const cost = getAggregatedCartCost(storeId);
+    res.json(cost);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Settings routes
+app.get('/api/settings', (req, res) => {
+  try {
+    res.json({
+      selected_store_id: getSelectedStoreId(),
+      price_staleness_days: getPriceStalenessDays()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/settings', (req, res) => {
+  try {
+    const { selected_store_id, price_staleness_days } = req.body;
+
+    if (selected_store_id !== undefined) {
+      setSelectedStoreId(selected_store_id);
+    }
+
+    if (price_staleness_days !== undefined) {
+      if (typeof price_staleness_days !== 'number' || price_staleness_days <= 0) {
+        return res.status(400).json({ error: 'price_staleness_days must be a positive number' });
+      }
+      setPriceStalenessDays(price_staleness_days);
+    }
+
+    res.json({
+      selected_store_id: getSelectedStoreId(),
+      price_staleness_days: getPriceStalenessDays()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Export route
 app.get('/api/export', (req, res) => {
   try {
@@ -381,12 +634,34 @@ app.get('/api/export', (req, res) => {
       allConversions.push(...conversions);
     }
 
+    const stores = getAllStores.all();
+
+    // Get all prices, annotated with names for cross-DB portability
+    const allPrices = [];
+    for (const ingredient of ingredients) {
+      const prices = getPricesByIngredientId.all(ingredient.id);
+      allPrices.push(...prices.map(p => ({
+        ingredient_id: p.ingredient_id,
+        ingredient_name: ingredient.name,
+        store_id: p.store_id,
+        store_name: p.store_name,
+        package_quantity: p.package_quantity,
+        package_unit_id: p.package_unit_id,
+        package_unit_name: p.package_unit_name,
+        price: p.price,
+        is_preferred: !!p.is_preferred,
+        updated_at: p.updated_at
+      })));
+    }
+
     const exportData = {
-      version: '3.0',
+      version: '4.0',
       exported_at: new Date().toISOString(),
       units: units,
       ingredients: ingredients,
       ingredient_conversions: allConversions,
+      stores: stores,
+      prices: allPrices,
       recipes: recipes
     };
     res.json(exportData);
@@ -398,7 +673,7 @@ app.get('/api/export', (req, res) => {
 // Import route
 app.post('/api/import', (req, res) => {
   try {
-    const { recipes, ingredients: importedIngredients, units: importedUnits, ingredient_conversions: importedConversions, mode } = req.body;
+    const { recipes, ingredients: importedIngredients, units: importedUnits, ingredient_conversions: importedConversions, stores: importedStores, prices: importedPrices, mode } = req.body;
 
     if (!recipes || !Array.isArray(recipes)) {
       return res.status(400).json({ error: 'Invalid import data: recipes array is required' });
@@ -526,6 +801,53 @@ app.post('/api/import', (req, res) => {
           } catch (error) {
             // Ignore duplicate conversions
             console.log(`Skipping duplicate conversion for ingredient ${newIngredientId}`);
+          }
+        }
+      }
+    }
+
+    // Import stores if provided (for v4.0 format)
+    const storeMap = {}; // old ID or name -> new ID
+    if (importedStores && Array.isArray(importedStores)) {
+      for (const s of importedStores) {
+        if (s.name) {
+          const created = getOrCreateStore(s.name);
+          if (s.id !== undefined) {
+            storeMap[s.id] = created.id;
+          }
+          storeMap[s.name.toLowerCase()] = created.id;
+        }
+      }
+    }
+
+    // Import prices if provided (for v4.0 format)
+    if (importedPrices && Array.isArray(importedPrices)) {
+      for (const p of importedPrices) {
+        const newIngredientId = p.ingredient_id !== undefined
+          ? ingredientMap[p.ingredient_id]
+          : (p.ingredient_name ? ingredientMap[p.ingredient_name.toLowerCase()] : null);
+
+        const newStoreId = p.store_id !== undefined
+          ? storeMap[p.store_id]
+          : (p.store_name ? storeMap[p.store_name.toLowerCase()] : null);
+
+        const newUnitId = p.package_unit_id !== undefined
+          ? unitMap[p.package_unit_id]
+          : (p.package_unit_name ? unitMap[p.package_unit_name.toLowerCase()] : null);
+
+        if (newIngredientId && newStoreId && newUnitId &&
+            typeof p.package_quantity === 'number' && typeof p.price === 'number') {
+          try {
+            createPriceOption({
+              ingredient_id: newIngredientId,
+              store_id: newStoreId,
+              package_quantity: p.package_quantity,
+              package_unit_id: newUnitId,
+              price: p.price,
+              is_preferred: !!p.is_preferred
+            });
+          } catch (error) {
+            console.log(`Skipping price import for ingredient ${newIngredientId}/store ${newStoreId}: ${error.message}`);
           }
         }
       }
