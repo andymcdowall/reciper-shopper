@@ -26,6 +26,8 @@ const {
   createUnit,
   updateUnit,
   deleteUnit,
+  getInUseUnitIds,
+  deleteUnitsExcept,
   getIngredientConversions,
   createIngredientConversion,
   deleteIngredientConversion,
@@ -61,6 +63,67 @@ if (!fs.existsSync(dataDir)) {
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
+
+// Two-pass unit import: base units first (no base_unit_id/base_unit_name), then derived units,
+// since a derived unit's base_unit_id must already exist. Shared by /api/import and the
+// "reset units to common" flow. Returns the id-resolution map plus the names of units that were
+// newly created (as opposed to already existing and left untouched).
+function applyUnitsImport(importedUnits) {
+  const unitMap = {}; // old ID or name -> new ID
+  const createdNames = [];
+
+  if (!importedUnits || !Array.isArray(importedUnits)) {
+    return { unitMap, createdNames };
+  }
+
+  for (const unit of importedUnits) {
+    const hasNoBaseUnit = (unit.base_unit_id === null || unit.base_unit_id === undefined) &&
+                          (unit.base_unit_name === null || unit.base_unit_name === undefined);
+    if (hasNoBaseUnit) {
+      const alreadyExisted = !!getUnitByName.get(unit.name);
+      const created = getOrCreateUnit(unit.name, unit.category, null, null, unit.rounding_increment);
+      if (!alreadyExisted) createdNames.push(created.name);
+      if (unit.id !== undefined) unitMap[unit.id] = created.id;
+      unitMap[unit.name.toLowerCase()] = created.id;
+    }
+  }
+
+  for (const unit of importedUnits) {
+    const hasBaseUnit = (unit.base_unit_id !== null && unit.base_unit_id !== undefined) ||
+                       (unit.base_unit_name !== null && unit.base_unit_name !== undefined);
+    if (hasBaseUnit) {
+      let newBaseUnitId;
+      if (unit.base_unit_name) {
+        newBaseUnitId = unitMap[unit.base_unit_name.toLowerCase()];
+      } else if (unit.base_unit_id !== undefined && unit.base_unit_id !== null) {
+        newBaseUnitId = unitMap[unit.base_unit_id];
+      }
+
+      if (newBaseUnitId) {
+        const existing = getUnitByName.get(unit.name);
+        if (existing && existing.base_unit_id === null) {
+          updateUnit.run({
+            id: existing.id,
+            name: unit.name,
+            category: unit.category,
+            base_unit_id: newBaseUnitId,
+            to_base_factor: unit.to_base_factor,
+            rounding_increment: unit.rounding_increment
+          });
+          if (unit.id !== undefined) unitMap[unit.id] = existing.id;
+          unitMap[unit.name.toLowerCase()] = existing.id;
+        } else if (!existing) {
+          const created = getOrCreateUnit(unit.name, unit.category, newBaseUnitId, unit.to_base_factor, unit.rounding_increment);
+          createdNames.push(created.name);
+          if (unit.id !== undefined) unitMap[unit.id] = created.id;
+          unitMap[unit.name.toLowerCase()] = created.id;
+        }
+      }
+    }
+  }
+
+  return { unitMap, createdNames };
+}
 
 // Recipe routes
 app.get('/api/recipes', (req, res) => {
@@ -385,6 +448,34 @@ app.delete('/api/units/:id', (req, res) => {
   }
 });
 
+// Resets units to the common defaults: deletes every unit not currently referenced by a recipe
+// or a price (including base units still needed by a kept derived unit), then seeds the common
+// set from defaults/common-units.json. Units still in use are left alone rather than blocking
+// the whole operation.
+app.post('/api/units/reset-to-common', (req, res) => {
+  try {
+    const defaultsPath = path.join(__dirname, 'defaults', 'common-units.json');
+    const commonData = JSON.parse(fs.readFileSync(defaultsPath, 'utf8'));
+
+    const protectedIds = getInUseUnitIds();
+    const skippedInUse = getAllUnits.all()
+      .filter(u => protectedIds.has(u.id))
+      .map(u => u.name);
+
+    const deleted = deleteUnitsExcept(protectedIds);
+    const { createdNames: seeded } = applyUnitsImport(commonData.units);
+
+    res.json({
+      message: `Reset complete: deleted ${deleted.length} unused unit(s), kept ${skippedInUse.length} unit(s) still in use, added ${seeded.length} common unit(s).`,
+      deleted,
+      skipped_in_use: skippedInUse,
+      seeded
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Store routes
 app.get('/api/stores', (req, res) => {
   try {
@@ -691,62 +782,8 @@ app.post('/api/import', (req, res) => {
       deleteAllRecipes();
     }
 
-    // Import units if provided (for v3.0 format)
-    const unitMap = {}; // old ID -> new ID or name -> new ID
-    if (importedUnits && Array.isArray(importedUnits)) {
-      // First pass: create base units (those without base_unit_id or base_unit_name)
-      for (const unit of importedUnits) {
-        const hasNoBaseUnit = (unit.base_unit_id === null || unit.base_unit_id === undefined) &&
-                              (unit.base_unit_name === null || unit.base_unit_name === undefined);
-        if (hasNoBaseUnit) {
-          const created = getOrCreateUnit(unit.name, unit.category, null, null);
-          if (unit.id !== undefined) {
-            unitMap[unit.id] = created.id;
-          }
-          unitMap[unit.name.toLowerCase()] = created.id;
-        }
-      }
-
-      // Second pass: create/update non-base units
-      for (const unit of importedUnits) {
-        const hasBaseUnit = (unit.base_unit_id !== null && unit.base_unit_id !== undefined) ||
-                           (unit.base_unit_name !== null && unit.base_unit_name !== undefined);
-        if (hasBaseUnit) {
-          // Resolve base unit ID
-          let newBaseUnitId;
-          if (unit.base_unit_name) {
-            newBaseUnitId = unitMap[unit.base_unit_name.toLowerCase()];
-          } else if (unit.base_unit_id !== undefined && unit.base_unit_id !== null) {
-            newBaseUnitId = unitMap[unit.base_unit_id];
-          }
-
-          if (newBaseUnitId) {
-            // Check if unit already exists
-            const existing = getUnitByName.get(unit.name);
-            if (existing && existing.base_unit_id === null) {
-              // Update existing unit to set base_unit_id and to_base_factor
-              updateUnit.run({
-                id: existing.id,
-                name: unit.name,
-                category: unit.category,
-                base_unit_id: newBaseUnitId,
-                to_base_factor: unit.to_base_factor
-              });
-              if (unit.id !== undefined) {
-                unitMap[unit.id] = existing.id;
-              }
-              unitMap[unit.name.toLowerCase()] = existing.id;
-            } else if (!existing) {
-              const created = getOrCreateUnit(unit.name, unit.category, newBaseUnitId, unit.to_base_factor);
-              if (unit.id !== undefined) {
-                unitMap[unit.id] = created.id;
-              }
-              unitMap[unit.name.toLowerCase()] = created.id;
-            }
-          }
-        }
-      }
-    }
+    // Import units if provided (for v3.0+ format)
+    const { unitMap } = applyUnitsImport(importedUnits);
 
     // Import ingredients if provided
     const ingredientMap = {}; // old ID -> new ID or name -> new ID

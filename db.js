@@ -173,6 +173,44 @@ const updateUnit = db.prepare(`
 
 const deleteUnit = db.prepare('DELETE FROM units WHERE id = ?');
 
+const getUnitIdsUsedByRecipes = db.prepare('SELECT DISTINCT unit_id FROM recipe_ingredients');
+
+const getUnitIdsUsedByPrices = db.prepare('SELECT DISTINCT package_unit_id AS unit_id FROM prices');
+
+// A unit is "in use" if a recipe or a price references it directly, or if it's the base unit of
+// another unit that is itself in use (units.base_unit_id is ON DELETE RESTRICT, so that base
+// can't be deleted while a surviving derived unit still points to it).
+function getInUseUnitIds() {
+  const directlyInUse = new Set([
+    ...getUnitIdsUsedByRecipes.all().map(r => r.unit_id),
+    ...getUnitIdsUsedByPrices.all().map(r => r.unit_id)
+  ]);
+
+  const protectedIds = new Set(directlyInUse);
+  for (const id of directlyInUse) {
+    const unit = getUnitById.get(id);
+    if (unit && unit.base_unit_id) {
+      protectedIds.add(unit.base_unit_id);
+    }
+  }
+  return protectedIds;
+}
+
+// Deletes every unit NOT in protectedIds, returning the names of the units that were deleted.
+// Derived units (base_unit_id set) are deleted before base units, since a base unit can't be
+// deleted while any surviving unit -- including one about to be deleted in this same call --
+// still references it as its base.
+function deleteUnitsExcept(protectedIds) {
+  const toDelete = getAllUnits.all().filter(u => !protectedIds.has(u.id));
+  const derived = toDelete.filter(u => u.base_unit_id !== null);
+  const base = toDelete.filter(u => u.base_unit_id === null);
+
+  for (const u of derived) deleteUnit.run(u.id);
+  for (const u of base) deleteUnit.run(u.id);
+
+  return toDelete.map(u => u.name);
+}
+
 // Ingredient conversion queries
 const getIngredientConversions = db.prepare(`
   SELECT ic.*, u1.name as from_unit_name, u2.name as to_unit_name
@@ -329,7 +367,7 @@ function getOrCreateIngredient(name) {
 }
 
 // Unit helper functions
-function getOrCreateUnit(name, category, base_unit_id, to_base_factor) {
+function getOrCreateUnit(name, category, base_unit_id, to_base_factor, rounding_increment) {
   let unit = getUnitByName.get(name);
   if (!unit) {
     const result = createUnit.run({
@@ -337,7 +375,7 @@ function getOrCreateUnit(name, category, base_unit_id, to_base_factor) {
       category,
       base_unit_id: base_unit_id || null,
       to_base_factor: to_base_factor || null,
-      rounding_increment: null
+      rounding_increment: rounding_increment === undefined ? null : rounding_increment
     });
     unit = getUnitById.get(result.lastInsertRowid);
   }
@@ -718,6 +756,8 @@ module.exports = {
   createUnit,
   updateUnit,
   deleteUnit,
+  getInUseUnitIds,
+  deleteUnitsExcept,
   convertUnits,
   // Ingredient conversion exports
   getIngredientConversions,
