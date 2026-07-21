@@ -63,6 +63,31 @@ db.exec(`
     added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS stores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS prices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ingredient_id INTEGER NOT NULL,
+    store_id INTEGER NOT NULL,
+    package_quantity REAL NOT NULL CHECK(package_quantity > 0),
+    package_unit_id INTEGER NOT NULL,
+    price REAL NOT NULL CHECK(price >= 0),
+    is_preferred INTEGER NOT NULL DEFAULT 0 CHECK(is_preferred IN (0, 1)),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE,
+    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+    FOREIGN KEY (package_unit_id) REFERENCES units(id) ON DELETE RESTRICT
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
 
 // Migrations
@@ -71,6 +96,12 @@ try {
 } catch (e) {
   // Column already exists
 }
+
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_one_preferred
+  ON prices(ingredient_id, store_id)
+  WHERE is_preferred = 1
+`);
 
 // Recipe queries
 const getAllRecipes = db.prepare('SELECT * FROM recipes ORDER BY created_at DESC');
@@ -179,6 +210,84 @@ const getShoppingList = db.prepare(`
   INNER JOIN cart c ON ri.recipe_id = c.recipe_id
   ORDER BY i.name
 `);
+
+// Store queries
+const getAllStores = db.prepare('SELECT * FROM stores ORDER BY name ASC');
+
+const getStoreById = db.prepare('SELECT * FROM stores WHERE id = ?');
+
+const getStoreByName = db.prepare('SELECT * FROM stores WHERE name = ? COLLATE NOCASE');
+
+const createStore = db.prepare('INSERT INTO stores (name) VALUES (@name)');
+
+const updateStore = db.prepare('UPDATE stores SET name = @name WHERE id = @id');
+
+const deleteStore = db.prepare('DELETE FROM stores WHERE id = ?');
+
+// Price queries
+const getPriceById = db.prepare('SELECT * FROM prices WHERE id = ?');
+
+const getPricesByIngredientId = db.prepare(`
+  SELECT p.*, s.name as store_name, u.name as package_unit_name
+  FROM prices p
+  INNER JOIN stores s ON p.store_id = s.id
+  INNER JOIN units u ON p.package_unit_id = u.id
+  WHERE p.ingredient_id = ?
+  ORDER BY s.name ASC, p.is_preferred DESC
+`);
+
+const getPricesByStoreId = db.prepare(`
+  SELECT p.*, i.name as ingredient_name, u.name as package_unit_name
+  FROM prices p
+  INNER JOIN ingredients i ON p.ingredient_id = i.id
+  INNER JOIN units u ON p.package_unit_id = u.id
+  WHERE p.store_id = ?
+  ORDER BY i.name ASC
+`);
+
+const getPreferredPrice = db.prepare(`
+  SELECT p.*, u.name as package_unit_name
+  FROM prices p
+  INNER JOIN units u ON p.package_unit_id = u.id
+  WHERE p.ingredient_id = ? AND p.store_id = ? AND p.is_preferred = 1
+`);
+
+const countPricesForPair = db.prepare(
+  'SELECT COUNT(*) as c FROM prices WHERE ingredient_id = ? AND store_id = ?'
+);
+
+const insertPrice = db.prepare(`
+  INSERT INTO prices (ingredient_id, store_id, package_quantity, package_unit_id, price, is_preferred, updated_at)
+  VALUES (@ingredient_id, @store_id, @package_quantity, @package_unit_id, @price, @is_preferred, CURRENT_TIMESTAMP)
+`);
+
+const updatePriceFields = db.prepare(`
+  UPDATE prices
+  SET package_quantity = @package_quantity, package_unit_id = @package_unit_id, price = @price, updated_at = CURRENT_TIMESTAMP
+  WHERE id = @id
+`);
+
+const clearPreferredForPair = db.prepare(
+  'UPDATE prices SET is_preferred = 0 WHERE ingredient_id = ? AND store_id = ?'
+);
+
+const setPreferredFlag = db.prepare('UPDATE prices SET is_preferred = 1 WHERE id = ?');
+
+const deletePrice = db.prepare('DELETE FROM prices WHERE id = ?');
+
+const getMostRecentPriceForPair = db.prepare(
+  'SELECT id FROM prices WHERE ingredient_id = ? AND store_id = ? ORDER BY updated_at DESC LIMIT 1'
+);
+
+// Settings queries
+const getSettingRow = db.prepare('SELECT value FROM app_settings WHERE key = ?');
+
+const upsertSetting = db.prepare(`
+  INSERT INTO app_settings (key, value) VALUES (@key, @value)
+  ON CONFLICT(key) DO UPDATE SET value = @value
+`);
+
+const DEFAULT_STALENESS_DAYS = 182;
 
 // Helper functions
 function getRecipeWithIngredients(id) {
@@ -294,7 +403,11 @@ function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
   return toUnit.base_unit_id ? baseQuantity / toUnit.to_base_factor : baseQuantity;
 }
 
-function getAggregatedShoppingList() {
+// Sums quantities across all cart recipes per ingredient, converting into each ingredient's
+// preferred unit (or the first unit seen). No display rounding is applied here — this is the
+// shared aggregation step used both for the display shopping list and for cart cost math, which
+// need to aggregate quantities BEFORE rounding up to whole packages (see getAggregatedCartCost).
+function aggregateCartIngredients() {
   const items = getShoppingList.all();
   const aggregated = {};
 
@@ -316,7 +429,6 @@ function getAggregatedShoppingList() {
     });
   }
 
-  // Convert and aggregate
   const result = [];
   for (const key in aggregated) {
     const group = aggregated[key];
@@ -335,33 +447,220 @@ function getAggregatedShoppingList() {
         const converted = convertUnits(item.unit_id, targetUnitId, item.quantity, group.ingredient_id);
         totalQuantity += converted;
       } catch (error) {
-        // If conversion fails, skip this item or add separately
         console.error(`Conversion error for ${group.name}: ${error.message}`);
-        // For now, if no conversion possible, just add the original quantity if same unit
         if (item.unit_id === targetUnitId) {
           totalQuantity += item.quantity;
         }
       }
     }
 
-    const targetUnit = getUnitById.get(targetUnitId);
-    if (targetUnit) {
-      let displayQuantity = totalQuantity;
-      if (targetUnit.rounding_increment && targetUnit.rounding_increment > 0) {
-        displayQuantity = Math.round(totalQuantity / targetUnit.rounding_increment) * targetUnit.rounding_increment;
-        // Fix floating-point precision (e.g. 0.25 increments)
-        const precision = (targetUnit.rounding_increment.toString().split('.')[1] || '').length;
-        displayQuantity = parseFloat(displayQuantity.toFixed(precision + 2));
-      }
-      result.push({
-        name: group.name,
-        quantity: displayQuantity,
-        unit: targetUnit.name
-      });
-    }
+    result.push({
+      ingredient_id: group.ingredient_id,
+      name: group.name,
+      unit_id: targetUnitId,
+      quantity: totalQuantity
+    });
   }
 
   return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getAggregatedShoppingList() {
+  return aggregateCartIngredients().map(group => {
+    const targetUnit = getUnitById.get(group.unit_id);
+    if (!targetUnit) return null;
+
+    let displayQuantity = group.quantity;
+    if (targetUnit.rounding_increment && targetUnit.rounding_increment > 0) {
+      displayQuantity = Math.round(group.quantity / targetUnit.rounding_increment) * targetUnit.rounding_increment;
+      // Fix floating-point precision (e.g. 0.25 increments)
+      const precision = (targetUnit.rounding_increment.toString().split('.')[1] || '').length;
+      displayQuantity = parseFloat(displayQuantity.toFixed(precision + 2));
+    }
+
+    return {
+      name: group.name,
+      quantity: displayQuantity,
+      unit: targetUnit.name
+    };
+  }).filter(Boolean);
+}
+
+// Store helper functions
+function getOrCreateStore(name) {
+  let store = getStoreByName.get(name);
+  if (!store) {
+    const result = createStore.run({ name });
+    store = getStoreById.get(result.lastInsertRowid);
+  }
+  return store;
+}
+
+// Price helper functions
+// The first price added for an (ingredient, store) pair is auto-preferred, since there's
+// otherwise no way to cost that pair at all. Later inserts respect the requested is_preferred
+// flag, clearing any sibling first to satisfy the partial unique index.
+function createPriceOption(data) {
+  const transaction = db.transaction((d) => {
+    const existingCount = countPricesForPair.get(d.ingredient_id, d.store_id).c;
+    const isPreferred = existingCount === 0 ? true : !!d.is_preferred;
+
+    if (isPreferred) {
+      clearPreferredForPair.run(d.ingredient_id, d.store_id);
+    }
+
+    const result = insertPrice.run({
+      ingredient_id: d.ingredient_id,
+      store_id: d.store_id,
+      package_quantity: d.package_quantity,
+      package_unit_id: d.package_unit_id,
+      price: d.price,
+      is_preferred: isPreferred ? 1 : 0
+    });
+    return getPriceById.get(result.lastInsertRowid);
+  });
+  return transaction(data);
+}
+
+function updatePriceOption(id, data) {
+  updatePriceFields.run({
+    id,
+    package_quantity: data.package_quantity,
+    package_unit_id: data.package_unit_id,
+    price: data.price
+  });
+  return getPriceById.get(id);
+}
+
+function setPreferredPrice(id) {
+  const price = getPriceById.get(id);
+  if (!price) throw new Error('Price not found');
+
+  const transaction = db.transaction(() => {
+    clearPreferredForPair.run(price.ingredient_id, price.store_id);
+    setPreferredFlag.run(id);
+  });
+  transaction();
+  return getPriceById.get(id);
+}
+
+// If the deleted row was preferred, promotes the most-recently-updated remaining option for
+// that (ingredient, store) pair so it doesn't go unpriceable while alternatives still exist.
+function deletePriceOption(id) {
+  const price = getPriceById.get(id);
+  if (!price) return { changes: 0 };
+
+  const transaction = db.transaction(() => {
+    const result = deletePrice.run(id);
+    if (price.is_preferred) {
+      const remaining = getMostRecentPriceForPair.get(price.ingredient_id, price.store_id);
+      if (remaining) setPreferredFlag.run(remaining.id);
+    }
+    return result;
+  });
+  return transaction();
+}
+
+// Settings helper functions
+function getSelectedStoreId() {
+  const row = getSettingRow.get('selected_store_id');
+  return row && row.value !== null ? parseInt(row.value, 10) : null;
+}
+
+function setSelectedStoreId(storeId) {
+  upsertSetting.run({ key: 'selected_store_id', value: storeId === null || storeId === undefined ? null : String(storeId) });
+}
+
+function getPriceStalenessDays() {
+  const row = getSettingRow.get('price_staleness_days');
+  return row && row.value !== null ? parseFloat(row.value) : DEFAULT_STALENESS_DAYS;
+}
+
+function setPriceStalenessDays(days) {
+  upsertSetting.run({ key: 'price_staleness_days', value: String(days) });
+}
+
+// Cost computation
+function isPriceStale(price, thresholdDays) {
+  const threshold = thresholdDays === undefined ? getPriceStalenessDays() : thresholdDays;
+  const ageMs = Date.now() - new Date(price.updated_at.replace(' ', 'T') + 'Z').getTime();
+  return ageMs / 86400000 > threshold;
+}
+
+// items: [{ ingredient_id, name, unit_id, quantity }]. Rounds up to whole packages (ceil) per
+// ingredient. Ingredients with no preferred price at storeId, or whose unit can't convert to the
+// price's package unit, are excluded from total_cost and reported in missing_ingredients —
+// never treated as $0.
+function computeCostForItems(items, storeId) {
+  const thresholdDays = getPriceStalenessDays();
+  const lineItems = [];
+  const missingIngredients = [];
+  let totalCost = 0;
+
+  for (const item of items) {
+    const priceOption = getPreferredPrice.get(item.ingredient_id, storeId);
+    if (!priceOption) {
+      missingIngredients.push({ ingredient_id: item.ingredient_id, name: item.name });
+      continue;
+    }
+
+    let neededInPackageUnit;
+    try {
+      neededInPackageUnit = convertUnits(item.unit_id, priceOption.package_unit_id, item.quantity, item.ingredient_id);
+    } catch (error) {
+      missingIngredients.push({ ingredient_id: item.ingredient_id, name: item.name });
+      continue;
+    }
+
+    const packagesNeeded = Math.ceil(neededInPackageUnit / priceOption.package_quantity);
+    const lineCost = packagesNeeded * priceOption.price;
+    totalCost += lineCost;
+
+    lineItems.push({
+      ingredient_id: item.ingredient_id,
+      name: item.name,
+      quantity: item.quantity,
+      unit_id: item.unit_id,
+      package_quantity: priceOption.package_quantity,
+      package_unit_id: priceOption.package_unit_id,
+      package_unit_name: priceOption.package_unit_name,
+      unit_price: priceOption.price,
+      packages_needed: packagesNeeded,
+      line_cost: lineCost,
+      price_updated_at: priceOption.updated_at,
+      is_stale: isPriceStale(priceOption, thresholdDays)
+    });
+  }
+
+  return {
+    store_id: storeId,
+    total_cost: totalCost,
+    matched_count: lineItems.length,
+    total_count: items.length,
+    items: lineItems,
+    missing_ingredients: missingIngredients
+  };
+}
+
+// Single-recipe cost: NOT aggregated with the cart/other recipes.
+function getRecipeCost(recipeId, storeId) {
+  const recipe = getRecipeWithIngredients(recipeId);
+  if (!recipe) return null;
+
+  const items = recipe.ingredients.map(ing => ({
+    ingredient_id: ing.id,
+    name: ing.name,
+    unit_id: ing.unit_id,
+    quantity: ing.quantity
+  }));
+
+  return computeCostForItems(items, storeId);
+}
+
+// Cart/grocery-list cost: quantities are aggregated across all cart recipes BEFORE rounding up
+// to whole packages, so multiple recipes sharing an ingredient don't each buy a full package.
+function getAggregatedCartCost(storeId) {
+  return computeCostForItems(aggregateCartIngredients(), storeId);
 }
 
 function getAllRecipesWithIngredients() {
@@ -423,5 +722,31 @@ module.exports = {
   // Ingredient conversion exports
   getIngredientConversions,
   createIngredientConversion,
-  deleteIngredientConversion
+  deleteIngredientConversion,
+  // Store exports
+  getAllStores,
+  getStoreById,
+  getStoreByName,
+  getOrCreateStore,
+  createStore,
+  updateStore,
+  deleteStore,
+  // Price exports
+  getPriceById,
+  getPricesByIngredientId,
+  getPricesByStoreId,
+  getPreferredPrice,
+  createPriceOption,
+  updatePriceOption,
+  setPreferredPrice,
+  deletePriceOption,
+  // Settings exports
+  getSelectedStoreId,
+  setSelectedStoreId,
+  getPriceStalenessDays,
+  setPriceStalenessDays,
+  // Cost exports
+  isPriceStale,
+  getRecipeCost,
+  getAggregatedCartCost
 };
