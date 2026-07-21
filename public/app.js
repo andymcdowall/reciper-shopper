@@ -4,9 +4,14 @@ let cartRecipes = [];
 let ingredients = [];
 let units = [];
 let ingredientConversions = {}; // keyed by ingredient_id
+let stores = [];
+let ingredientPrices = {}; // keyed by ingredient_id
+let selectedStoreId = null;
+let priceStalenessDays = 182;
 let currentView = 'recipes';
 let editingIngredientId = null;
 let editingUnitId = null;
+let editingStoreId = null;
 
 // API functions
 async function fetchRecipes() {
@@ -54,7 +59,14 @@ async function removeRecipeFromCart(recipeId) {
 async function fetchShoppingList() {
   const response = await fetch('/api/shopping-list');
   const items = await response.json();
-  renderShoppingList(items);
+
+  let cost = null;
+  if (selectedStoreId) {
+    const costRes = await fetch(`/api/shopping-list/cost?store_id=${selectedStoreId}`);
+    cost = await costRes.json();
+  }
+
+  renderShoppingList(items, cost);
 }
 
 // Ingredient API functions
@@ -156,6 +168,84 @@ async function deleteIngredientConversionAPI(ingredientId, conversionId) {
   await fetch(`/api/ingredients/${ingredientId}/conversions/${conversionId}`, { method: 'DELETE' });
 }
 
+// Store API functions
+async function fetchStores() {
+  const response = await fetch('/api/stores');
+  stores = await response.json();
+}
+
+async function createStoreAPI(name) {
+  const response = await fetch('/api/stores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create store');
+  }
+  return await response.json();
+}
+
+async function updateStoreAPI(id, name) {
+  const response = await fetch(`/api/stores/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  return await response.json();
+}
+
+async function deleteStoreAPI(id) {
+  await fetch(`/api/stores/${id}`, { method: 'DELETE' });
+}
+
+// Price API functions
+async function fetchIngredientPrices(ingredientId) {
+  const response = await fetch(`/api/ingredients/${ingredientId}/prices`);
+  const prices = await response.json();
+  ingredientPrices[ingredientId] = prices;
+  return prices;
+}
+
+async function createPriceAPI(ingredientId, data) {
+  const response = await fetch(`/api/ingredients/${ingredientId}/prices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create price');
+  }
+  return await response.json();
+}
+
+async function deletePriceAPI(priceId) {
+  await fetch(`/api/prices/${priceId}`, { method: 'DELETE' });
+}
+
+async function setPricePreferredAPI(priceId) {
+  await fetch(`/api/prices/${priceId}/preferred`, { method: 'PUT' });
+}
+
+// Settings API functions
+async function fetchSettings() {
+  const response = await fetch('/api/settings');
+  const settings = await response.json();
+  selectedStoreId = settings.selected_store_id;
+  priceStalenessDays = settings.price_staleness_days;
+}
+
+async function updateSettingsAPI(data) {
+  const response = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return await response.json();
+}
+
 // Rendering functions
 function renderRecipes() {
   const container = document.getElementById('recipes-list');
@@ -204,7 +294,7 @@ function renderCart() {
   `).join('');
 }
 
-function renderShoppingList(items) {
+function renderShoppingList(items, cost) {
   const container = document.getElementById('shopping-list-items');
 
   if (items.length === 0) {
@@ -212,7 +302,12 @@ function renderShoppingList(items) {
     return;
   }
 
+  const costHtml = selectedStoreId
+    ? renderCostSummary(cost)
+    : '<p class="empty-state">Select a store above to see cost.</p>';
+
   container.innerHTML = `
+    ${costHtml}
     <ul class="shopping-list">
       ${items.map(item => `
         <li>
@@ -226,6 +321,30 @@ function renderShoppingList(items) {
   `;
 }
 
+// Renders a cost object returned by /api/recipes/:id/cost or /api/shopping-list/cost
+function renderCostSummary(cost) {
+  if (!cost) return '';
+
+  const missingHtml = cost.missing_ingredients.length
+    ? `<p class="cost-warning">Missing at this store: ${cost.missing_ingredients.map(m => m.name).join(', ')}</p>`
+    : '';
+
+  const lines = cost.items.map(item => `
+    <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
+      <span>${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}</span>
+      ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
+    </div>
+  `).join('');
+
+  return `
+    <div class="cost-summary">
+      <strong>$${cost.total_cost.toFixed(2)} for ${cost.matched_count} of ${cost.total_count} items</strong>
+      ${missingHtml}
+      <div class="cost-line-items">${lines}</div>
+    </div>
+  `;
+}
+
 async function renderIngredients() {
   const container = document.getElementById('ingredients-grid');
 
@@ -234,15 +353,19 @@ async function renderIngredients() {
     return;
   }
 
-  // Fetch conversions for all ingredients
+  // Fetch conversions and prices for all ingredients
   for (const ing of ingredients) {
     if (!ingredientConversions[ing.id]) {
       await fetchIngredientConversions(ing.id);
+    }
+    if (!ingredientPrices[ing.id]) {
+      await fetchIngredientPrices(ing.id);
     }
   }
 
   container.innerHTML = ingredients.map(ing => {
     const conversions = ingredientConversions[ing.id] || [];
+    const prices = ingredientPrices[ing.id] || [];
     const baseUnits = units.filter(u => u.base_unit_id === null);
     const preferredUnit = units.find(u => u.id === ing.preferred_unit_id);
 
@@ -292,6 +415,38 @@ async function renderIngredients() {
           </select>
           <input type="number" id="conv-factor-${ing.id}" placeholder="Factor" step="0.000001">
           <button class="btn-primary btn-small" onclick="addConversion(${ing.id})">Add</button>
+        </div>
+      </div>
+
+      <!-- Prices -->
+      <div class="ingredient-prices" id="prices-${ing.id}">
+        <div class="conversions-header">
+          <div class="conversions-title">Prices</div>
+          <button onclick="togglePriceForm(${ing.id})" class="btn-secondary btn-small">+ Add</button>
+        </div>
+        <div class="price-list">
+          ${prices.map(p => `
+            <div class="price-item ${p.is_preferred ? 'preferred' : ''}">
+              <span>${p.store_name}: ${p.package_quantity} ${p.package_unit_name} &mdash; $${p.price.toFixed(2)}
+                ${p.is_preferred ? '<span class="preferred-badge">preferred</span>' : `<button class="btn-secondary btn-small" onclick="setPricePreferred(${ing.id}, ${p.id})">Set preferred</button>`}
+              </span>
+              <button class="conversion-delete-btn" onclick="deletePrice(${ing.id}, ${p.id})">Delete</button>
+            </div>
+          `).join('')}
+          ${prices.length === 0 ? '<p style="font-size: 0.85rem; color: #999;">No prices yet</p>' : ''}
+        </div>
+        <div class="price-add-form" id="price-form-${ing.id}" style="display: none;">
+          <select id="price-store-${ing.id}">
+            <option value="">Store...</option>
+            ${stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+          </select>
+          <input type="number" id="price-pkg-qty-${ing.id}" placeholder="Package size" step="0.01" min="0">
+          <select id="price-pkg-unit-${ing.id}">
+            <option value="">Unit...</option>
+            ${units.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
+          </select>
+          <input type="number" id="price-value-${ing.id}" placeholder="Price" step="0.01" min="0">
+          <button class="btn-primary btn-small" onclick="addPrice(${ing.id})">Add</button>
         </div>
       </div>
     </div>
@@ -352,6 +507,35 @@ function renderUnits() {
   updateBaseUnitDropdown();
 }
 
+function renderStores() {
+  const container = document.getElementById('stores-grid');
+
+  if (stores.length === 0) {
+    container.innerHTML = '<p class="empty-state">No stores yet. Add your first store!</p>';
+  } else {
+    container.innerHTML = stores.map(store => `
+      <div class="ingredient-card" data-id="${store.id}">
+        <div class="ingredient-name" id="store-name-${store.id}">${store.name}</div>
+        <input type="text" class="ingredient-edit-input" id="store-edit-${store.id}" value="${store.name}" style="display: none;">
+        <div class="ingredient-actions">
+          <button onclick="editStore(${store.id})" class="btn-secondary btn-small" id="store-edit-btn-${store.id}">Edit</button>
+          <button onclick="saveStore(${store.id})" class="btn-primary btn-small" id="store-save-btn-${store.id}" style="display: none;">Save</button>
+          <button onclick="cancelEditStore(${store.id})" class="btn-secondary btn-small" id="store-cancel-btn-${store.id}" style="display: none;">Cancel</button>
+          <button onclick="deleteStoreCard(${store.id})" class="btn-danger btn-small">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('staleness-days-input').value = priceStalenessDays;
+  renderStoreSelectOptions();
+}
+
+function renderStoreSelectOptions() {
+  const select = document.getElementById('global-store-select');
+  select.innerHTML = '<option value="">None selected</option>' +
+    stores.map(s => `<option value="${s.id}" ${s.id === selectedStoreId ? 'selected' : ''}>${s.name}</option>`).join('');
+}
 
 // View management
 function showView(viewName) {
@@ -372,9 +556,11 @@ function showView(viewName) {
   } else if (viewName === 'shopping-list') {
     fetchShoppingList();
   } else if (viewName === 'ingredients') {
-    Promise.all([fetchIngredients(), fetchUnits()]).then(() => renderIngredients());
+    Promise.all([fetchIngredients(), fetchUnits(), fetchStores()]).then(() => renderIngredients());
   } else if (viewName === 'units') {
     fetchUnits().then(() => renderUnits());
+  } else if (viewName === 'stores') {
+    fetchStores().then(() => renderStores());
   } else if (viewName === 'export-import') {
     // Clear any previous import results
     document.getElementById('import-result').innerHTML = '';
@@ -391,11 +577,31 @@ function updateCartCount() {
 async function viewRecipeDetails(id) {
   const recipe = await fetchRecipe(id);
 
-  const ingredientsList = recipe.ingredients.map(ing =>
-    `${ing.quantity} ${ing.unit} ${ing.name}`
-  ).join('\n');
+  document.getElementById('recipe-detail-name').textContent = recipe.name;
+  document.getElementById('recipe-detail-meta').innerHTML =
+    `<span>Servings: ${recipe.servings || 'N/A'}</span><span>Prep: ${recipe.prep_time || 'N/A'} min</span>`;
+  document.getElementById('recipe-detail-ingredients').innerHTML =
+    '<ul>' + recipe.ingredients.map(ing => `<li>${ing.quantity} ${ing.unit} ${ing.name}</li>`).join('') + '</ul>';
+  document.getElementById('recipe-detail-instructions').textContent = recipe.instructions || 'None';
 
-  alert(`${recipe.name}\n\nServings: ${recipe.servings || 'N/A'}\nPrep Time: ${recipe.prep_time || 'N/A'} min\n\nIngredients:\n${ingredientsList}\n\nInstructions:\n${recipe.instructions || 'None'}`);
+  const costEl = document.getElementById('recipe-detail-cost');
+  if (!selectedStoreId) {
+    costEl.innerHTML = '<p class="empty-state">Select a store above to see cost.</p>';
+  } else {
+    const res = await fetch(`/api/recipes/${id}/cost?store_id=${selectedStoreId}`);
+    const cost = await res.json();
+    costEl.innerHTML = renderCostSummary(cost);
+  }
+
+  const modal = document.getElementById('recipe-detail-modal');
+  modal.classList.add('show');
+  modal.style.display = 'flex';
+}
+
+function closeRecipeDetailModal() {
+  const modal = document.getElementById('recipe-detail-modal');
+  modal.classList.remove('show');
+  modal.style.display = 'none';
 }
 
 async function deleteRecipe(id) {
@@ -501,6 +707,133 @@ async function deleteConversion(ingredientId, conversionId) {
   await deleteIngredientConversionAPI(ingredientId, conversionId);
   await fetchIngredientConversions(ingredientId);
   await renderIngredients();
+}
+
+// Price actions
+function togglePriceForm(ingredientId) {
+  const form = document.getElementById(`price-form-${ingredientId}`);
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+}
+
+async function addPrice(ingredientId) {
+  const storeId = parseInt(document.getElementById(`price-store-${ingredientId}`).value);
+  const packageQuantity = parseFloat(document.getElementById(`price-pkg-qty-${ingredientId}`).value);
+  const packageUnitId = parseInt(document.getElementById(`price-pkg-unit-${ingredientId}`).value);
+  const price = parseFloat(document.getElementById(`price-value-${ingredientId}`).value);
+
+  if (!storeId || !packageUnitId || !packageQuantity || packageQuantity <= 0 || isNaN(price) || price < 0) {
+    alert('Please fill in all price fields');
+    return;
+  }
+
+  try {
+    await createPriceAPI(ingredientId, {
+      store_id: storeId,
+      package_quantity: packageQuantity,
+      package_unit_id: packageUnitId,
+      price
+    });
+    await fetchIngredientPrices(ingredientId);
+    await renderIngredients();
+  } catch (error) {
+    alert('Failed to add price: ' + error.message);
+  }
+}
+
+async function deletePrice(ingredientId, priceId) {
+  if (!confirm('Are you sure you want to delete this price?')) return;
+
+  await deletePriceAPI(priceId);
+  await fetchIngredientPrices(ingredientId);
+  await renderIngredients();
+}
+
+async function setPricePreferred(ingredientId, priceId) {
+  await setPricePreferredAPI(priceId);
+  await fetchIngredientPrices(ingredientId);
+  await renderIngredients();
+}
+
+// Store actions
+async function addStore() {
+  const nameInput = document.getElementById('new-store-name');
+  const name = nameInput.value.trim();
+
+  if (!name) return;
+
+  try {
+    await createStoreAPI(name);
+    nameInput.value = '';
+    await fetchStores();
+    renderStores();
+  } catch (error) {
+    alert('Failed to add store: ' + error.message);
+  }
+}
+
+function editStore(id) {
+  editingStoreId = id;
+  document.getElementById(`store-name-${id}`).style.display = 'none';
+  document.getElementById(`store-edit-${id}`).style.display = 'block';
+  document.getElementById(`store-edit-btn-${id}`).style.display = 'none';
+  document.getElementById(`store-save-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`store-cancel-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`store-edit-${id}`).focus();
+}
+
+async function saveStore(id) {
+  const newName = document.getElementById(`store-edit-${id}`).value.trim();
+
+  if (!newName) {
+    alert('Store name cannot be empty');
+    return;
+  }
+
+  await updateStoreAPI(id, newName);
+  editingStoreId = null;
+  await fetchStores();
+  renderStores();
+}
+
+function cancelEditStore(id) {
+  editingStoreId = null;
+  const store = stores.find(s => s.id === id);
+  document.getElementById(`store-edit-${id}`).value = store.name;
+  document.getElementById(`store-name-${id}`).style.display = 'block';
+  document.getElementById(`store-edit-${id}`).style.display = 'none';
+  document.getElementById(`store-edit-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`store-save-btn-${id}`).style.display = 'none';
+  document.getElementById(`store-cancel-btn-${id}`).style.display = 'none';
+}
+
+async function deleteStoreCard(id) {
+  if (!confirm('Are you sure you want to delete this store? Its prices will be removed too.')) return;
+
+  await deleteStoreAPI(id);
+  await fetchStores();
+  renderStores();
+}
+
+// Settings actions
+async function saveStalenessDays() {
+  const value = parseFloat(document.getElementById('staleness-days-input').value);
+  if (!value || value <= 0) {
+    alert('Please enter a positive number of days');
+    return;
+  }
+
+  await updateSettingsAPI({ price_staleness_days: value });
+  priceStalenessDays = value;
+}
+
+async function changeSelectedStore(storeIdValue) {
+  selectedStoreId = storeIdValue ? parseInt(storeIdValue) : null;
+  await updateSettingsAPI({ selected_store_id: selectedStoreId });
+
+  // Refresh whatever cost-sensitive view is currently open
+  if (currentView === 'shopping-list') {
+    await fetchShoppingList();
+  }
 }
 
 // Unit actions
@@ -1075,6 +1408,7 @@ document.getElementById('nav-recipes').addEventListener('click', () => showView(
 document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
 document.getElementById('nav-ingredients').addEventListener('click', () => showView('ingredients'));
 document.getElementById('nav-units').addEventListener('click', () => showView('units'));
+document.getElementById('nav-stores').addEventListener('click', () => showView('stores'));
 document.getElementById('nav-cart').addEventListener('click', () => showView('cart'));
 document.getElementById('nav-shopping-list').addEventListener('click', () => showView('shopping-list'));
 document.getElementById('nav-export-import').addEventListener('click', () => showView('export-import'));
@@ -1097,6 +1431,18 @@ document.getElementById('unit-form').addEventListener('submit', async (e) => {
 
 // Update base unit dropdown when category changes
 document.getElementById('new-unit-category').addEventListener('change', updateBaseUnitDropdown);
+
+// Add store form
+document.getElementById('store-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await addStore();
+});
+
+document.getElementById('save-staleness-btn').addEventListener('click', saveStalenessDays);
+
+document.getElementById('global-store-select').addEventListener('change', (e) => {
+  changeSelectedStore(e.target.value);
+});
 
 document.getElementById('cancel-recipe-btn').addEventListener('click', () => {
   clearRecipeForm();
@@ -1225,6 +1571,7 @@ fetchRecipes();
 fetchCart();
 fetchIngredients();
 fetchUnits();
+Promise.all([fetchStores(), fetchSettings()]).then(() => renderStoreSelectOptions());
 
 // Attach autocomplete to initial ingredient row
 document.addEventListener('DOMContentLoaded', () => {
