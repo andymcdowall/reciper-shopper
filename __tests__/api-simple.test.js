@@ -33,7 +33,21 @@ const {
   getAllRecipesWithIngredients,
   deleteAllRecipes,
   getOrCreateIngredient,
-  getOrCreateUnit
+  getOrCreateUnit,
+  getOrCreateStore,
+  updateStore,
+  deleteStore,
+  getPricesByIngredientId,
+  createPriceOption,
+  updatePriceOption,
+  setPreferredPrice,
+  deletePriceOption,
+  getSelectedStoreId,
+  setSelectedStoreId,
+  getPriceStalenessDays,
+  setPriceStalenessDays,
+  getRecipeCost,
+  getAggregatedCartCost
 } = require('../db');
 
 // Helper function to convert ingredient names and unit names to IDs
@@ -459,6 +473,304 @@ describe('API Integration Tests', () => {
       const recipes = getAllRecipes.all();
       expect(recipes).toHaveLength(1);
       expect(recipes[0].name).toBe('New Recipe');
+    });
+  });
+
+  describe('Store Operations', () => {
+    test('should create a store', () => {
+      const store = getOrCreateStore('Store Ops Market');
+      expect(store.name).toBe('Store Ops Market');
+    });
+
+    test('getOrCreateStore should be idempotent for the same name', () => {
+      const first = getOrCreateStore('Store Ops Dedup');
+      const second = getOrCreateStore('Store Ops Dedup');
+      expect(second.id).toBe(first.id);
+    });
+
+    test('should update a store name', () => {
+      const store = getOrCreateStore('Store Ops Old Name');
+      updateStore.run({ id: store.id, name: 'Store Ops New Name' });
+      const stores = require('../db').getAllStores.all();
+      const updated = stores.find(s => s.id === store.id);
+      expect(updated.name).toBe('Store Ops New Name');
+    });
+
+    test('should delete a store', () => {
+      const store = getOrCreateStore('Store Ops To Delete');
+      const result = deleteStore.run(store.id);
+      expect(result.changes).toBe(1);
+    });
+  });
+
+  describe('Price Operations', () => {
+    test('first price added for an (ingredient, store) pair is auto-preferred', () => {
+      const ingredient = getOrCreateIngredient('Price Ops Olive Oil');
+      const store = getOrCreateStore('Price Ops Store A');
+      const unit = getOrCreateUnit('Price Ops Bottle', 'count');
+
+      const price = createPriceOption({
+        ingredient_id: ingredient.id,
+        store_id: store.id,
+        package_quantity: 1,
+        package_unit_id: unit.id,
+        price: 4.99,
+        is_preferred: false
+      });
+
+      expect(price.is_preferred).toBe(1);
+    });
+
+    test('marking a second price preferred clears the first', () => {
+      const ingredient = getOrCreateIngredient('Price Ops Tomatoes');
+      const store = getOrCreateStore('Price Ops Store B');
+      const canUnit = getOrCreateUnit('Price Ops Can', 'count');
+
+      const first = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: canUnit.id, price: 1.5, is_preferred: false
+      });
+      const second = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: canUnit.id, price: 2.0, is_preferred: true
+      });
+
+      const prices = getPricesByIngredientId.all(ingredient.id).filter(p => p.store_id === store.id);
+      const preferred = prices.filter(p => p.is_preferred);
+      expect(preferred).toHaveLength(1);
+      expect(preferred[0].id).toBe(second.id);
+      expect(prices.find(p => p.id === first.id).is_preferred).toBe(0);
+    });
+
+    test('setPreferredPrice swaps the preferred flag between two options', () => {
+      const ingredient = getOrCreateIngredient('Price Ops Rice');
+      const store = getOrCreateStore('Price Ops Store C');
+      const bagUnit = getOrCreateUnit('Price Ops Bag', 'count');
+
+      const first = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: bagUnit.id, price: 3.0, is_preferred: false
+      });
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: bagUnit.id, price: 5.0, is_preferred: false
+      });
+
+      setPreferredPrice(first.id);
+
+      const prices = getPricesByIngredientId.all(ingredient.id).filter(p => p.store_id === store.id);
+      const preferred = prices.filter(p => p.is_preferred);
+      expect(preferred).toHaveLength(1);
+      expect(preferred[0].id).toBe(first.id);
+    });
+
+    test('deleting the preferred price promotes a remaining sibling', () => {
+      const ingredient = getOrCreateIngredient('Price Ops Pasta');
+      const store = getOrCreateStore('Price Ops Store D');
+      const boxUnit = getOrCreateUnit('Price Ops Box', 'count');
+
+      const first = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: boxUnit.id, price: 1.0, is_preferred: true
+      });
+      const second = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: boxUnit.id, price: 1.5, is_preferred: false
+      });
+
+      deletePriceOption(first.id);
+
+      const prices = getPricesByIngredientId.all(ingredient.id).filter(p => p.store_id === store.id);
+      expect(prices).toHaveLength(1);
+      expect(prices[0].id).toBe(second.id);
+      expect(prices[0].is_preferred).toBe(1);
+    });
+
+    test('updatePriceOption edits fields without touching is_preferred', () => {
+      const ingredient = getOrCreateIngredient('Price Ops Butter');
+      const store = getOrCreateStore('Price Ops Store E');
+      const stickUnit = getOrCreateUnit('Price Ops Stick', 'count');
+
+      const price = createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: stickUnit.id, price: 2.0, is_preferred: true
+      });
+
+      const updated = updatePriceOption(price.id, { package_quantity: 4, package_unit_id: stickUnit.id, price: 3.5 });
+      expect(updated.package_quantity).toBe(4);
+      expect(updated.price).toBe(3.5);
+      expect(updated.is_preferred).toBe(1);
+    });
+
+    test('the partial unique index rejects two preferred rows for the same pair at the raw SQL level', () => {
+      const { db } = require('../db');
+      const ingredient = getOrCreateIngredient('Price Ops Constraint Test');
+      const store = getOrCreateStore('Price Ops Store F');
+      const unit = getOrCreateUnit('Price Ops Jar', 'count');
+
+      const rawInsert = db.prepare(`
+        INSERT INTO prices (ingredient_id, store_id, package_quantity, package_unit_id, price, is_preferred)
+        VALUES (?, ?, ?, ?, ?, 1)
+      `);
+
+      rawInsert.run(ingredient.id, store.id, 1, unit.id, 1.0);
+      expect(() => {
+        rawInsert.run(ingredient.id, store.id, 1, unit.id, 2.0);
+      }).toThrow();
+    });
+  });
+
+  describe('Cost Computation', () => {
+    test('getRecipeCost rounds up to whole packages, not fractional or floor', () => {
+      const unit = getOrCreateUnit('Cost Ops Gram', 'mass');
+      const ingredient = getOrCreateIngredient('Cost Ops Flour');
+      const store = getOrCreateStore('Cost Ops Store A');
+
+      // Package = 10g, need 21g (2.1x) -> must round up to 3 packages, not 2
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 10, package_unit_id: unit.id, price: 1.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Cost Ops Recipe A',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 21, unit_id: unit.id }]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.items).toHaveLength(1);
+      expect(cost.items[0].packages_needed).toBe(3);
+      expect(cost.total_cost).toBe(3);
+      expect(cost.missing_ingredients).toHaveLength(0);
+    });
+
+    test('an ingredient with no price at the store is excluded and listed as missing, never $0', () => {
+      const unit = getOrCreateUnit('Cost Ops Each', 'count');
+      const pricedIngredient = getOrCreateIngredient('Cost Ops Priced Item');
+      const unpricedIngredient = getOrCreateIngredient('Cost Ops Unpriced Item');
+      const store = getOrCreateStore('Cost Ops Store B');
+
+      createPriceOption({
+        ingredient_id: pricedIngredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 2.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Cost Ops Recipe B',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [
+          { ingredient_id: pricedIngredient.id, quantity: 1, unit_id: unit.id },
+          { ingredient_id: unpricedIngredient.id, quantity: 1, unit_id: unit.id }
+        ]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.total_cost).toBe(2.0);
+      expect(cost.matched_count).toBe(1);
+      expect(cost.total_count).toBe(2);
+      expect(cost.missing_ingredients).toHaveLength(1);
+      expect(cost.missing_ingredients[0].name).toBe('Cost Ops Unpriced Item');
+    });
+
+    test('an unconvertible unit mismatch is treated as missing, not a crash or $0', () => {
+      const countUnit = getOrCreateUnit('Cost Ops Whole', 'count');
+      const massUnit = getOrCreateUnit('Cost Ops Ounce', 'mass');
+      const ingredient = getOrCreateIngredient('Cost Ops Mismatch Item');
+      const store = getOrCreateStore('Cost Ops Store C');
+
+      // Priced by mass, but the recipe calls for it by count, with no ingredient-specific
+      // conversion defined between the two -- convertUnits should throw internally.
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: massUnit.id, price: 5.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Cost Ops Recipe C',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 2, unit_id: countUnit.id }]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.total_cost).toBe(0);
+      expect(cost.missing_ingredients).toHaveLength(1);
+      expect(cost.missing_ingredients[0].name).toBe('Cost Ops Mismatch Item');
+    });
+
+    test('getAggregatedCartCost aggregates across recipes before rounding up to whole packages', () => {
+      const unit = getOrCreateUnit('Cost Ops Tablespoon', 'volume');
+      const ingredient = getOrCreateIngredient('Cost Ops Shared Oil');
+      const store = getOrCreateStore('Cost Ops Store D');
+
+      // A 48-tbsp bottle for $4.99
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 48, package_unit_id: unit.id, price: 4.99, is_preferred: true
+      });
+
+      // 5 recipes, each needing 2 tbsp = 10 tbsp total, well under one 48-tbsp bottle
+      for (let i = 0; i < 5; i++) {
+        const recipeId = createRecipeWithIngredients({
+          name: `Cost Ops Shared Oil Recipe ${i}`,
+          servings: 1, prep_time: 5, instructions: '',
+          ingredients: [{ ingredient_id: ingredient.id, quantity: 2, unit_id: unit.id }]
+        });
+        addToCart.run(recipeId);
+      }
+
+      const cost = getAggregatedCartCost(store.id);
+      expect(cost.items).toHaveLength(1);
+      expect(cost.items[0].packages_needed).toBe(1);
+      expect(cost.total_cost).toBe(4.99);
+    });
+
+    test('getAggregatedCartCost still rounds up correctly once aggregated quantity crosses a package boundary', () => {
+      const unit = getOrCreateUnit('Cost Ops Teaspoon', 'volume');
+      const ingredient = getOrCreateIngredient('Cost Ops Boundary Oil');
+      const store = getOrCreateStore('Cost Ops Store E');
+
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 48, package_unit_id: unit.id, price: 4.99, is_preferred: true
+      });
+
+      // 5 recipes needing 10 tsp each = 50 tsp total -> just over one 48-tsp bottle -> 2 bottles
+      for (let i = 0; i < 5; i++) {
+        const recipeId = createRecipeWithIngredients({
+          name: `Cost Ops Boundary Oil Recipe ${i}`,
+          servings: 1, prep_time: 5, instructions: '',
+          ingredients: [{ ingredient_id: ingredient.id, quantity: 10, unit_id: unit.id }]
+        });
+        addToCart.run(recipeId);
+      }
+
+      const cost = getAggregatedCartCost(store.id);
+      expect(cost.items[0].packages_needed).toBe(2);
+      expect(cost.total_cost).toBeCloseTo(9.98, 5);
+    });
+  });
+
+  describe('Settings', () => {
+    test('setSelectedStoreId(null) clears the selected store', () => {
+      setSelectedStoreId(null);
+      expect(getSelectedStoreId()).toBeNull();
+    });
+
+    test('setSelectedStoreId/getSelectedStoreId round-trip', () => {
+      const store = getOrCreateStore('Settings Ops Store');
+      setSelectedStoreId(store.id);
+      expect(getSelectedStoreId()).toBe(store.id);
+    });
+
+    test('getPriceStalenessDays defaults to 182 when unset', () => {
+      expect(getPriceStalenessDays()).toBe(182);
+    });
+
+    test('setPriceStalenessDays/getPriceStalenessDays round-trip', () => {
+      setPriceStalenessDays(30);
+      expect(getPriceStalenessDays()).toBe(30);
+      setPriceStalenessDays(182); // restore default for any later tests relying on it
     });
   });
 });

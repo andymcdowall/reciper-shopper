@@ -97,6 +97,7 @@ describe('View Management', () => {
     expect(document.getElementById('nav-add-recipe')).toBeTruthy();
     expect(document.getElementById('nav-ingredients')).toBeTruthy();
     expect(document.getElementById('nav-units')).toBeTruthy();
+    expect(document.getElementById('nav-stores')).toBeTruthy();
     expect(document.getElementById('nav-cart')).toBeTruthy();
     expect(document.getElementById('nav-shopping-list')).toBeTruthy();
     expect(document.getElementById('nav-export-import')).toBeTruthy();
@@ -106,6 +107,33 @@ describe('View Management', () => {
     const activeViews = document.querySelectorAll('.view.active');
     expect(activeViews).toHaveLength(1);
     expect(activeViews[0].id).toBe('recipes-view');
+  });
+});
+
+describe('Store & Cost UI Elements', () => {
+  test('should have a stores view with add form and grid', () => {
+    expect(document.getElementById('stores-view')).toBeTruthy();
+    expect(document.getElementById('store-form')).toBeTruthy();
+    expect(document.getElementById('new-store-name')).toBeTruthy();
+    expect(document.getElementById('stores-grid')).toBeTruthy();
+  });
+
+  test('should have a staleness threshold setting', () => {
+    expect(document.getElementById('staleness-days-input')).toBeTruthy();
+    expect(document.getElementById('save-staleness-btn')).toBeTruthy();
+  });
+
+  test('should have a global store selector in the header', () => {
+    const select = document.getElementById('global-store-select');
+    expect(select).toBeTruthy();
+    expect(select.tagName).toBe('SELECT');
+  });
+
+  test('should have a recipe detail modal with a cost section', () => {
+    expect(document.getElementById('recipe-detail-modal')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-name')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-ingredients')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-cost')).toBeTruthy();
   });
 });
 
@@ -209,21 +237,25 @@ describe('Export Data Format', () => {
       }
     ];
 
-    // Simulate what the export function creates (v3.0 format)
+    // Simulate what the export function creates (v4.0 format)
     const exportData = {
-      version: '3.0',
+      version: '4.0',
       exported_at: new Date().toISOString(),
       units: [],
       ingredients: [],
       ingredient_conversions: [],
+      stores: [],
+      prices: [],
       recipes: recipes
     };
 
-    expect(exportData.version).toBe('3.0');
+    expect(exportData.version).toBe('4.0');
     expect(exportData.exported_at).toBeTruthy();
     expect(exportData).toHaveProperty('units');
     expect(exportData).toHaveProperty('ingredients');
     expect(exportData).toHaveProperty('ingredient_conversions');
+    expect(exportData).toHaveProperty('stores');
+    expect(exportData).toHaveProperty('prices');
     expect(exportData.recipes).toHaveLength(1);
     expect(exportData.recipes[0]).toHaveProperty('name');
     expect(exportData.recipes[0]).toHaveProperty('ingredients');
@@ -281,6 +313,100 @@ describe('Import Validation', () => {
 
     expect(typeof invalidQty.quantity).not.toBe('number');
     expect(missingName.name).toBeFalsy();
+  });
+});
+
+describe('Cost Summary Rendering Logic', () => {
+  // Mirrors renderCostSummary() in public/app.js
+  function renderCostSummary(cost) {
+    if (!cost) return '';
+
+    const missingHtml = cost.missing_ingredients.length
+      ? `<p class="cost-warning">Missing at this store: ${cost.missing_ingredients.map(m => m.name).join(', ')}</p>`
+      : '';
+
+    const lines = cost.items.map(item => `
+      <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
+        <span>${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}</span>
+        ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
+      </div>
+    `).join('');
+
+    return `
+      <div class="cost-summary">
+        <strong>$${cost.total_cost.toFixed(2)} for ${cost.matched_count} of ${cost.total_count} items</strong>
+        ${missingHtml}
+        <div class="cost-line-items">${lines}</div>
+      </div>
+    `;
+  }
+
+  test('should show the missing-ingredients warning with the affected names', () => {
+    const html = renderCostSummary({
+      total_cost: 34.2,
+      matched_count: 11,
+      total_count: 13,
+      items: [],
+      missing_ingredients: [{ name: 'tahini' }, { name: 'saffron' }]
+    });
+
+    expect(html).toContain('$34.20 for 11 of 13 items');
+    expect(html).toContain('Missing at this store: tahini, saffron');
+  });
+
+  test('should not render a warning when nothing is missing', () => {
+    const html = renderCostSummary({
+      total_cost: 10,
+      matched_count: 2,
+      total_count: 2,
+      items: [],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('cost-warning');
+  });
+
+  test('should flag stale prices with the price-stale class and badge', () => {
+    const html = renderCostSummary({
+      total_cost: 4.99,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        packages_needed: 1,
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        line_cost: 4.99,
+        is_stale: true
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).toContain('price-stale');
+    expect(html).toContain('stale-badge');
+    expect(html).toContain('price may be outdated');
+  });
+
+  test('should not flag fresh prices as stale', () => {
+    const html = renderCostSummary({
+      total_cost: 4.99,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        packages_needed: 1,
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        line_cost: 4.99,
+        is_stale: false
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('price-stale');
+    expect(html).not.toContain('stale-badge');
   });
 });
 
