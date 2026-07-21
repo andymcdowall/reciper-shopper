@@ -863,9 +863,11 @@ async function changeSelectedStore(storeIdValue) {
   selectedStoreId = storeIdValue ? parseInt(storeIdValue) : null;
   await updateSettingsAPI({ selected_store_id: selectedStoreId });
 
-  // Refresh whatever cost-sensitive view is currently open
+  // Refresh whatever store-sensitive view is currently open
   if (currentView === 'shopping-list') {
     await fetchShoppingList();
+  } else if (currentView === 'ingredients') {
+    await renderIngredients();
   }
 }
 
