@@ -37,7 +37,7 @@ describe('Recipe Form Handling', () => {
     const ingredientRow = document.querySelector('.ingredient-row');
     ingredientRow.querySelector('.ingredient-name').value = 'flour';
     ingredientRow.querySelector('.ingredient-quantity').value = '2';
-    ingredientRow.querySelector('.ingredient-unit').value = 'cups';
+    ingredientRow.querySelector('.unit-name').value = 'cups';
 
     // Extract form data (simulating what the app does)
     const name = document.getElementById('recipe-name').value;
@@ -49,7 +49,7 @@ describe('Recipe Form Handling', () => {
     const ingredients = Array.from(ingredientRows).map(row => ({
       name: row.querySelector('.ingredient-name').value,
       quantity: parseFloat(row.querySelector('.ingredient-quantity').value),
-      unit: row.querySelector('.ingredient-unit').value
+      unit: row.querySelector('.unit-name').value
     }));
 
     expect(name).toBe('Test Recipe');
@@ -85,6 +85,8 @@ describe('View Management', () => {
   test('should have all required views', () => {
     expect(document.getElementById('recipes-view')).toBeTruthy();
     expect(document.getElementById('add-recipe-view')).toBeTruthy();
+    expect(document.getElementById('ingredients-view')).toBeTruthy();
+    expect(document.getElementById('units-view')).toBeTruthy();
     expect(document.getElementById('cart-view')).toBeTruthy();
     expect(document.getElementById('shopping-list-view')).toBeTruthy();
     expect(document.getElementById('export-import-view')).toBeTruthy();
@@ -93,6 +95,8 @@ describe('View Management', () => {
   test('should have navigation buttons for all views', () => {
     expect(document.getElementById('nav-recipes')).toBeTruthy();
     expect(document.getElementById('nav-add-recipe')).toBeTruthy();
+    expect(document.getElementById('nav-ingredients')).toBeTruthy();
+    expect(document.getElementById('nav-units')).toBeTruthy();
     expect(document.getElementById('nav-cart')).toBeTruthy();
     expect(document.getElementById('nav-shopping-list')).toBeTruthy();
     expect(document.getElementById('nav-export-import')).toBeTruthy();
@@ -205,15 +209,21 @@ describe('Export Data Format', () => {
       }
     ];
 
-    // Simulate what the export function creates
+    // Simulate what the export function creates (v3.0 format)
     const exportData = {
-      version: '1.0',
+      version: '3.0',
       exported_at: new Date().toISOString(),
+      units: [],
+      ingredients: [],
+      ingredient_conversions: [],
       recipes: recipes
     };
 
-    expect(exportData.version).toBe('1.0');
+    expect(exportData.version).toBe('3.0');
     expect(exportData.exported_at).toBeTruthy();
+    expect(exportData).toHaveProperty('units');
+    expect(exportData).toHaveProperty('ingredients');
+    expect(exportData).toHaveProperty('ingredient_conversions');
     expect(exportData.recipes).toHaveLength(1);
     expect(exportData.recipes[0]).toHaveProperty('name');
     expect(exportData.recipes[0]).toHaveProperty('ingredients');

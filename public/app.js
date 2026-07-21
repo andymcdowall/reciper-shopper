@@ -2,8 +2,11 @@
 let recipes = [];
 let cartRecipes = [];
 let ingredients = [];
+let units = [];
+let ingredientConversions = {}; // keyed by ingredient_id
 let currentView = 'recipes';
 let editingIngredientId = null;
+let editingUnitId = null;
 
 // API functions
 async function fetchRecipes() {
@@ -87,6 +90,72 @@ async function deleteIngredientAPI(id) {
   await fetch(`/api/ingredients/${id}`, { method: 'DELETE' });
 }
 
+async function updateIngredientPreferredUnitAPI(id, preferred_unit_id) {
+  const response = await fetch(`/api/ingredients/${id}/preferred-unit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferred_unit_id })
+  });
+  return await response.json();
+}
+
+// Unit API functions
+async function fetchUnits() {
+  const response = await fetch('/api/units');
+  units = await response.json();
+}
+
+async function createUnitAPI(name, category, base_unit_id, to_base_factor, rounding_increment) {
+  const response = await fetch('/api/units', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category, base_unit_id, to_base_factor, rounding_increment })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create unit');
+  }
+  return await response.json();
+}
+
+async function updateUnitAPI(id, name, category, base_unit_id, to_base_factor, rounding_increment) {
+  const response = await fetch(`/api/units/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category, base_unit_id, to_base_factor, rounding_increment })
+  });
+  return await response.json();
+}
+
+async function deleteUnitAPI(id) {
+  await fetch(`/api/units/${id}`, { method: 'DELETE' });
+}
+
+// Ingredient conversion API functions
+async function fetchIngredientConversions(ingredientId) {
+  const response = await fetch(`/api/ingredients/${ingredientId}/conversions`);
+  const conversions = await response.json();
+  ingredientConversions[ingredientId] = conversions;
+  return conversions;
+}
+
+async function createIngredientConversionAPI(ingredientId, from_unit_id, to_unit_id, factor) {
+  const response = await fetch(`/api/ingredients/${ingredientId}/conversions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_unit_id, to_unit_id, factor })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create conversion');
+  }
+  return await response.json();
+}
+
+async function deleteIngredientConversionAPI(ingredientId, conversionId) {
+  await fetch(`/api/ingredients/${ingredientId}/conversions/${conversionId}`, { method: 'DELETE' });
+}
+
 // Rendering functions
 function renderRecipes() {
   const container = document.getElementById('recipes-list');
@@ -157,7 +226,7 @@ function renderShoppingList(items) {
   `;
 }
 
-function renderIngredients() {
+async function renderIngredients() {
   const container = document.getElementById('ingredients-grid');
 
   if (ingredients.length === 0) {
@@ -165,7 +234,19 @@ function renderIngredients() {
     return;
   }
 
-  container.innerHTML = ingredients.map(ing => `
+  // Fetch conversions for all ingredients
+  for (const ing of ingredients) {
+    if (!ingredientConversions[ing.id]) {
+      await fetchIngredientConversions(ing.id);
+    }
+  }
+
+  container.innerHTML = ingredients.map(ing => {
+    const conversions = ingredientConversions[ing.id] || [];
+    const baseUnits = units.filter(u => u.base_unit_id === null);
+    const preferredUnit = units.find(u => u.id === ing.preferred_unit_id);
+
+    return `
     <div class="ingredient-card" data-id="${ing.id}">
       <div class="ingredient-name" id="ing-name-${ing.id}">${ing.name}</div>
       <input type="text" class="ingredient-edit-input" id="ing-edit-${ing.id}" value="${ing.name}" style="display: none;">
@@ -175,8 +256,100 @@ function renderIngredients() {
         <button onclick="cancelEditIngredient(${ing.id})" class="btn-secondary btn-small" id="ing-cancel-btn-${ing.id}" style="display: none;">Cancel</button>
         <button onclick="deleteIngredient(${ing.id})" class="btn-danger btn-small">Delete</button>
       </div>
+
+      <!-- Preferred Unit -->
+      <div class="ingredient-preferred-unit">
+        <div class="preferred-unit-label">Preferred Unit (for shopping list):</div>
+        <select class="preferred-unit-select" id="preferred-unit-${ing.id}" onchange="updatePreferredUnit(${ing.id}, this.value)">
+          <option value="">None</option>
+          ${units.map(u => `<option value="${u.id}" ${u.id === ing.preferred_unit_id ? 'selected' : ''}>${u.name} (${u.category})</option>`).join('')}
+        </select>
+      </div>
+
+      <!-- Conversions -->
+      <div class="ingredient-conversions" id="conversions-${ing.id}">
+        <div class="conversions-header">
+          <div class="conversions-title">Cross-Category Conversions</div>
+          <button onclick="toggleConversionForm(${ing.id})" class="btn-secondary btn-small" id="toggle-conv-${ing.id}">+ Add</button>
+        </div>
+        <div class="conversion-list">
+          ${conversions.map(c => `
+            <div class="conversion-item">
+              <span>1 ${c.from_unit_name} = ${c.factor} ${c.to_unit_name}</span>
+              <button class="conversion-delete-btn" onclick="deleteConversion(${ing.id}, ${c.id})">Delete</button>
+            </div>
+          `).join('')}
+          ${conversions.length === 0 ? '<p style="font-size: 0.85rem; color: #999;">No cross-category conversions</p>' : ''}
+        </div>
+        <div class="conversion-add-form" id="conv-form-${ing.id}" style="display: none;">
+          <select id="conv-from-${ing.id}">
+            <option value="">From unit...</option>
+            ${baseUnits.map(u => `<option value="${u.id}">${u.name} (${u.category})</option>`).join('')}
+          </select>
+          <select id="conv-to-${ing.id}">
+            <option value="">To unit...</option>
+            ${baseUnits.map(u => `<option value="${u.id}">${u.name} (${u.category})</option>`).join('')}
+          </select>
+          <input type="number" id="conv-factor-${ing.id}" placeholder="Factor" step="0.000001">
+          <button class="btn-primary btn-small" onclick="addConversion(${ing.id})">Add</button>
+        </div>
+      </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
+}
+
+function renderUnits() {
+  const container = document.getElementById('units-grid');
+
+  if (units.length === 0) {
+    container.innerHTML = '<p class="empty-state">No units yet. Add your first unit!</p>';
+    return;
+  }
+
+  container.innerHTML = units.map(unit => {
+    const baseUnit = unit.base_unit_id ? units.find(u => u.id === unit.base_unit_id) : null;
+    const conversionText = baseUnit
+      ? `1 ${unit.name} = ${unit.to_base_factor} ${baseUnit.name}`
+      : 'Base unit';
+    const roundingText = unit.rounding_increment ? `Rounds to nearest ${unit.rounding_increment}` : '';
+
+    return `
+    <div class="unit-card" data-id="${unit.id}">
+      <div class="unit-header">
+        <div class="unit-name" id="unit-name-${unit.id}">${unit.name}</div>
+        <span class="unit-category-badge ${unit.category}">${unit.category}</span>
+      </div>
+      <div class="unit-conversion" id="unit-conv-${unit.id}">${conversionText}${roundingText ? ` &middot; ${roundingText}` : ''}</div>
+      <div class="unit-edit-form" id="unit-edit-${unit.id}" style="display: none;">
+        <input type="text" id="unit-edit-name-${unit.id}" value="${unit.name}">
+        <select id="unit-edit-category-${unit.id}">
+          <option value="volume" ${unit.category === 'volume' ? 'selected' : ''}>Volume</option>
+          <option value="mass" ${unit.category === 'mass' ? 'selected' : ''}>Mass</option>
+          <option value="length" ${unit.category === 'length' ? 'selected' : ''}>Length</option>
+          <option value="count" ${unit.category === 'count' ? 'selected' : ''}>Count</option>
+        </select>
+        <select id="unit-edit-base-${unit.id}">
+          <option value="">Base unit</option>
+          ${units.filter(u => u.base_unit_id === null && u.id !== unit.id).map(u => `
+            <option value="${u.id}" ${unit.base_unit_id === u.id ? 'selected' : ''}>${u.name}</option>
+          `).join('')}
+        </select>
+        <input type="number" id="unit-edit-factor-${unit.id}" value="${unit.to_base_factor || ''}" placeholder="Conversion factor" step="0.000001">
+        <input type="number" id="unit-edit-rounding-${unit.id}" value="${unit.rounding_increment || ''}" placeholder="Rounding (e.g. 0.25, 1)" step="0.000001" min="0">
+      </div>
+      <div class="unit-actions">
+        <button onclick="editUnit(${unit.id})" class="btn-secondary btn-small" id="unit-edit-btn-${unit.id}">Edit</button>
+        <button onclick="saveUnit(${unit.id})" class="btn-primary btn-small" id="unit-save-btn-${unit.id}" style="display: none;">Save</button>
+        <button onclick="cancelEditUnit(${unit.id})" class="btn-secondary btn-small" id="unit-cancel-btn-${unit.id}" style="display: none;">Cancel</button>
+        <button onclick="deleteUnit(${unit.id})" class="btn-danger btn-small">Delete</button>
+      </div>
+    </div>
+  `;
+  }).join('');
+
+  // Update the base unit dropdown in the add form
+  updateBaseUnitDropdown();
 }
 
 
@@ -193,13 +366,15 @@ function showView(viewName) {
   if (viewName === 'recipes') {
     fetchRecipes();
   } else if (viewName === 'add-recipe') {
-    fetchIngredients(); // Ensure ingredients are loaded for autocomplete
+    Promise.all([fetchIngredients(), fetchUnits()]);  // Ensure both are loaded for autocomplete
   } else if (viewName === 'cart') {
     fetchCart();
   } else if (viewName === 'shopping-list') {
     fetchShoppingList();
   } else if (viewName === 'ingredients') {
-    fetchIngredients();
+    Promise.all([fetchIngredients(), fetchUnits()]).then(() => renderIngredients());
+  } else if (viewName === 'units') {
+    fetchUnits().then(() => renderUnits());
   } else if (viewName === 'export-import') {
     // Clear any previous import results
     document.getElementById('import-result').innerHTML = '';
@@ -289,6 +464,149 @@ async function deleteIngredient(id) {
   await fetchRecipes(); // Refresh recipes in case any were affected
 }
 
+// Ingredient conversion actions
+async function updatePreferredUnit(ingredientId, unitId) {
+  const preferred_unit_id = unitId ? parseInt(unitId) : null;
+  await updateIngredientPreferredUnitAPI(ingredientId, preferred_unit_id);
+  await fetchIngredients();
+}
+
+function toggleConversionForm(ingredientId) {
+  const form = document.getElementById(`conv-form-${ingredientId}`);
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+}
+
+async function addConversion(ingredientId) {
+  const fromUnitId = parseInt(document.getElementById(`conv-from-${ingredientId}`).value);
+  const toUnitId = parseInt(document.getElementById(`conv-to-${ingredientId}`).value);
+  const factor = parseFloat(document.getElementById(`conv-factor-${ingredientId}`).value);
+
+  if (!fromUnitId || !toUnitId || !factor) {
+    alert('Please fill in all conversion fields');
+    return;
+  }
+
+  try {
+    await createIngredientConversionAPI(ingredientId, fromUnitId, toUnitId, factor);
+    await fetchIngredientConversions(ingredientId);
+    await renderIngredients();
+  } catch (error) {
+    alert('Failed to add conversion: ' + error.message);
+  }
+}
+
+async function deleteConversion(ingredientId, conversionId) {
+  if (!confirm('Are you sure you want to delete this conversion?')) return;
+
+  await deleteIngredientConversionAPI(ingredientId, conversionId);
+  await fetchIngredientConversions(ingredientId);
+  await renderIngredients();
+}
+
+// Unit actions
+async function addUnit() {
+  const name = document.getElementById('new-unit-name').value.trim();
+  const category = document.getElementById('new-unit-category').value;
+  const base_unit_id = document.getElementById('new-unit-base').value;
+  const to_base_factor = document.getElementById('new-unit-factor').value;
+  const rounding_increment = document.getElementById('new-unit-rounding').value;
+
+  if (!name || !category) {
+    alert('Unit name and category are required');
+    return;
+  }
+
+  if (base_unit_id && !to_base_factor) {
+    alert('Conversion factor is required when base unit is selected');
+    return;
+  }
+
+  try {
+    await createUnitAPI(
+      name,
+      category,
+      base_unit_id ? parseInt(base_unit_id) : null,
+      to_base_factor ? parseFloat(to_base_factor) : null,
+      rounding_increment ? parseFloat(rounding_increment) : null
+    );
+    document.getElementById('new-unit-name').value = '';
+    document.getElementById('new-unit-category').value = '';
+    document.getElementById('new-unit-base').value = '';
+    document.getElementById('new-unit-factor').value = '';
+    document.getElementById('new-unit-rounding').value = '';
+    await fetchUnits();
+    renderUnits();
+  } catch (error) {
+    alert('Failed to add unit: ' + error.message);
+  }
+}
+
+function editUnit(id) {
+  editingUnitId = id;
+  document.getElementById(`unit-name-${id}`).style.display = 'none';
+  document.getElementById(`unit-conv-${id}`).style.display = 'none';
+  document.getElementById(`unit-edit-${id}`).style.display = 'flex';
+  document.getElementById(`unit-edit-btn-${id}`).style.display = 'none';
+  document.getElementById(`unit-save-btn-${id}`).style.display = 'inline-block';
+  document.getElementById(`unit-cancel-btn-${id}`).style.display = 'inline-block';
+}
+
+async function saveUnit(id) {
+  const name = document.getElementById(`unit-edit-name-${id}`).value.trim();
+  const category = document.getElementById(`unit-edit-category-${id}`).value;
+  const base_unit_id = document.getElementById(`unit-edit-base-${id}`).value;
+  const to_base_factor = document.getElementById(`unit-edit-factor-${id}`).value;
+  const rounding_increment = document.getElementById(`unit-edit-rounding-${id}`).value;
+
+  if (!name || !category) {
+    alert('Unit name and category cannot be empty');
+    return;
+  }
+
+  await updateUnitAPI(
+    id,
+    name,
+    category,
+    base_unit_id ? parseInt(base_unit_id) : null,
+    to_base_factor ? parseFloat(to_base_factor) : null,
+    rounding_increment ? parseFloat(rounding_increment) : null
+  );
+  editingUnitId = null;
+  await fetchUnits();
+  renderUnits();
+}
+
+function cancelEditUnit(id) {
+  editingUnitId = null;
+  renderUnits();
+}
+
+async function deleteUnit(id) {
+  if (!confirm('Are you sure you want to delete this unit? It may be referenced by recipes.')) return;
+
+  try {
+    await deleteUnitAPI(id);
+    await fetchUnits();
+    renderUnits();
+  } catch (error) {
+    alert('Failed to delete unit. It may be in use by recipes: ' + error.message);
+  }
+}
+
+function updateBaseUnitDropdown() {
+  const select = document.getElementById('new-unit-base');
+  const category = document.getElementById('new-unit-category').value;
+
+  if (!category) {
+    select.innerHTML = '<option value="">Base unit (optional)</option>';
+    return;
+  }
+
+  const baseUnits = units.filter(u => u.base_unit_id === null && u.category === category);
+  select.innerHTML = '<option value="">Base unit (optional)</option>' +
+    baseUnits.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+}
+
 // Form handling
 function addIngredientRow() {
   const container = document.getElementById('ingredients-list');
@@ -300,10 +618,19 @@ function addIngredientRow() {
     </div>
     <input type="hidden" class="ingredient-id">
     <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
-    <input type="text" class="ingredient-unit" placeholder="Unit" required>
+    <div class="unit-container">
+      <input type="text" class="unit-name" placeholder="Unit" required autocomplete="off">
+    </div>
+    <input type="hidden" class="unit-id">
     <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
   `;
   container.appendChild(row);
+
+  // Attach autocomplete to the new row
+  const nameInput = row.querySelector('.ingredient-name');
+  const unitNameInput = row.querySelector('.unit-name');
+  attachIngredientAutocomplete(nameInput);
+  attachUnitAutocomplete(unitNameInput);
 }
 
 function removeIngredient(button) {
@@ -320,13 +647,25 @@ function clearRecipeForm() {
   const container = document.getElementById('ingredients-list');
   container.innerHTML = `
     <div class="ingredient-row">
-      <input type="text" class="ingredient-name" list="ingredients-datalist" placeholder="Ingredient name" required>
+      <div class="ingredient-name-container">
+        <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off">
+      </div>
       <input type="hidden" class="ingredient-id">
       <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required>
-      <input type="text" class="ingredient-unit" placeholder="Unit" required>
+      <div class="unit-container">
+        <input type="text" class="unit-name" placeholder="Unit" required autocomplete="off">
+      </div>
+      <input type="hidden" class="unit-id">
       <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
     </div>
   `;
+
+  // Re-attach autocomplete to the reset row
+  const row = container.querySelector('.ingredient-row');
+  if (row) {
+    attachIngredientAutocomplete(row.querySelector('.ingredient-name'));
+    attachUnitAutocomplete(row.querySelector('.unit-name'));
+  }
 }
 
 // Export/Import functions
@@ -635,20 +974,113 @@ function attachIngredientAutocomplete(nameInput) {
   });
 }
 
+// Helper function to attach unit autocomplete handler
+function attachUnitAutocomplete(unitNameInput) {
+  const row = unitNameInput.closest('.ingredient-row');
+  const unitIdInput = row.querySelector('.unit-id');
+
+  createAutocomplete(unitNameInput, {
+    dataSource: () => units,
+
+    filterFn: (items, value) => {
+      return items.filter(unit =>
+        unit.name.toLowerCase().includes(value.toLowerCase())
+      );
+    },
+
+    renderItem: (unit) => {
+      return `<div class="autocomplete-item" data-id="${unit.id}" data-name="${unit.name}">
+        <span class="item-icon">✓</span> ${unit.name} <span style="color: #999; font-size: 0.85em;">(${unit.category})</span>
+      </div>`;
+    },
+
+    renderAddNew: (value) => {
+      const exactMatch = units.some(u => u.name.toLowerCase() === value.toLowerCase());
+      if (!exactMatch && value.trim()) {
+        return `<div class="autocomplete-item add-new" data-name="${value}" data-is-new="true">
+          <span class="item-icon">+</span> Add "${value}"
+        </div>`;
+      }
+      return null;
+    },
+
+    onSelect: (data, input, hiddenInput) => {
+      if (data['is-new'] === 'true') {
+        // Open modal to add new unit
+        openAddUnitModal(data.name, unitNameInput, unitIdInput);
+      } else {
+        input.value = data.name;
+        if (hiddenInput) {
+          hiddenInput.value = data.id || '';
+        }
+      }
+    },
+
+    hiddenInput: unitIdInput
+  });
+}
+
+// Modal functions for adding units from recipe form
+let modalTargetInputs = { nameInput: null, idInput: null };
+
+function openAddUnitModal(unitName, nameInput, idInput) {
+  const modal = document.getElementById('add-unit-modal');
+  const form = document.getElementById('add-unit-modal-form');
+
+  // Pre-fill unit name
+  document.getElementById('modal-unit-name').value = unitName;
+
+  // Store reference to inputs so we can update them after creation
+  modalTargetInputs = { nameInput, idInput };
+
+  // Show modal
+  modal.classList.add('show');
+  modal.style.display = 'flex';
+
+  // Focus on category field
+  document.getElementById('modal-unit-category').focus();
+}
+
+function closeAddUnitModal() {
+  const modal = document.getElementById('add-unit-modal');
+  const form = document.getElementById('add-unit-modal-form');
+
+  // Hide modal
+  modal.classList.remove('show');
+  modal.style.display = 'none';
+
+  // Reset form
+  form.reset();
+
+  // Clear target inputs reference
+  modalTargetInputs = { nameInput: null, idInput: null };
+}
+
+function updateModalBaseUnitDropdown() {
+  const select = document.getElementById('modal-unit-base');
+  const category = document.getElementById('modal-unit-category').value;
+
+  if (!category) {
+    select.innerHTML = '<option value="">None (this is a base unit)</option>';
+    return;
+  }
+
+  const baseUnits = units.filter(u => u.base_unit_id === null && u.category === category);
+  select.innerHTML = '<option value="">None (this is a base unit)</option>' +
+    baseUnits.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+}
+
 // Event listeners
 document.getElementById('nav-recipes').addEventListener('click', () => showView('recipes'));
 document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
 document.getElementById('nav-ingredients').addEventListener('click', () => showView('ingredients'));
+document.getElementById('nav-units').addEventListener('click', () => showView('units'));
 document.getElementById('nav-cart').addEventListener('click', () => showView('cart'));
 document.getElementById('nav-shopping-list').addEventListener('click', () => showView('shopping-list'));
 document.getElementById('nav-export-import').addEventListener('click', () => showView('export-import'));
 
 document.getElementById('add-ingredient-btn').addEventListener('click', () => {
   addIngredientRow();
-  // Attach autocomplete to the newly added row
-  const rows = document.querySelectorAll('.ingredient-row');
-  const lastRow = rows[rows.length - 1];
-  attachIngredientAutocomplete(lastRow.querySelector('.ingredient-name'));
 });
 
 // Add ingredient form
@@ -656,6 +1088,15 @@ document.getElementById('ingredient-form').addEventListener('submit', async (e) 
   e.preventDefault();
   await addIngredient();
 });
+
+// Add unit form
+document.getElementById('unit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await addUnit();
+});
+
+// Update base unit dropdown when category changes
+document.getElementById('new-unit-category').addEventListener('change', updateBaseUnitDropdown);
 
 document.getElementById('cancel-recipe-btn').addEventListener('click', () => {
   clearRecipeForm();
@@ -677,13 +1118,14 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
     const nameInput = row.querySelector('.ingredient-name');
     const idInput = row.querySelector('.ingredient-id');
     const quantityInput = row.querySelector('.ingredient-quantity');
-    const unitInput = row.querySelector('.ingredient-unit');
+    const unitNameInput = row.querySelector('.unit-name');
+    const unitIdInput = row.querySelector('.unit-id');
 
     const ingredientName = nameInput.value.trim();
     const quantity = parseFloat(quantityInput.value);
-    const unit = unitInput.value.trim();
+    const unitName = unitNameInput.value.trim();
 
-    if (!ingredientName || !quantity || !unit) {
+    if (!ingredientName || !quantity || !unitName) {
       alert('Please fill in all ingredient fields');
       return;
     }
@@ -701,10 +1143,17 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
       ingredientId = ingredient.id;
     }
 
+    // Get unit ID (must exist, no creation from recipe form)
+    let unitId = unitIdInput.value;
+    if (!unitId) {
+      alert(`Unit "${unitName}" not found. Please select an existing unit or create it in the Units tab first.`);
+      return;
+    }
+
     ingredientsData.push({
       ingredient_id: parseInt(ingredientId),
       quantity,
-      unit
+      unit_id: parseInt(unitId)
     });
   }
 
@@ -725,15 +1174,63 @@ document.getElementById('import-file').addEventListener('change', (e) => {
   document.getElementById('import-btn').disabled = !e.target.files[0];
 });
 
+// Modal event listeners
+document.getElementById('modal-unit-category').addEventListener('change', updateModalBaseUnitDropdown);
+document.getElementById('add-unit-modal-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById('modal-unit-name').value.trim();
+  const category = document.getElementById('modal-unit-category').value;
+  const base_unit_id = document.getElementById('modal-unit-base').value;
+  const to_base_factor = document.getElementById('modal-unit-factor').value;
+  const rounding_increment = document.getElementById('modal-unit-rounding').value;
+
+  if (!name || !category) {
+    alert('Unit name and category are required');
+    return;
+  }
+
+  if (base_unit_id && !to_base_factor) {
+    alert('Conversion factor is required when base unit is selected');
+    return;
+  }
+
+  try {
+    const newUnit = await createUnitAPI(
+      name,
+      category,
+      base_unit_id ? parseInt(base_unit_id) : null,
+      to_base_factor ? parseFloat(to_base_factor) : null,
+      rounding_increment ? parseFloat(rounding_increment) : null
+    );
+
+    // Refresh units list
+    await fetchUnits();
+
+    // Update the target inputs if they exist
+    if (modalTargetInputs.nameInput && modalTargetInputs.idInput) {
+      modalTargetInputs.nameInput.value = newUnit.name;
+      modalTargetInputs.idInput.value = newUnit.id;
+    }
+
+    // Close modal
+    closeAddUnitModal();
+  } catch (error) {
+    alert('Failed to add unit: ' + error.message);
+  }
+});
+
 // Initialize
 fetchRecipes();
 fetchCart();
 fetchIngredients();
+fetchUnits();
 
 // Attach autocomplete to initial ingredient row
 document.addEventListener('DOMContentLoaded', () => {
   const initialRow = document.querySelector('.ingredient-row');
   if (initialRow) {
     attachIngredientAutocomplete(initialRow.querySelector('.ingredient-name'));
+    attachUnitAutocomplete(initialRow.querySelector('.unit-name'));
   }
 });

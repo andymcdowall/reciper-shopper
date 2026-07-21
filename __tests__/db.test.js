@@ -14,7 +14,7 @@ beforeEach(() => {
   testDbPath = path.join(__dirname, 'test.db');
   db = new Database(testDbPath);
 
-  // Initialize schema with new structure
+  // Initialize schema with new structure including units
   db.exec(`
     CREATE TABLE IF NOT EXISTS recipes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,10 +25,35 @@ beforeEach(() => {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS units (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      category TEXT NOT NULL CHECK(category IN ('volume', 'mass', 'length', 'count')),
+      base_unit_id INTEGER,
+      to_base_factor REAL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (base_unit_id) REFERENCES units(id) ON DELETE RESTRICT
+    );
+
     CREATE TABLE IF NOT EXISTS ingredients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      preferred_unit_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (preferred_unit_id) REFERENCES units(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ingredient_conversions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ingredient_id INTEGER NOT NULL,
+      from_unit_id INTEGER NOT NULL,
+      to_unit_id INTEGER NOT NULL,
+      factor REAL NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE,
+      FOREIGN KEY (from_unit_id) REFERENCES units(id) ON DELETE CASCADE,
+      FOREIGN KEY (to_unit_id) REFERENCES units(id) ON DELETE CASCADE,
+      UNIQUE(ingredient_id, from_unit_id, to_unit_id)
     );
 
     CREATE TABLE IF NOT EXISTS recipe_ingredients (
@@ -36,9 +61,10 @@ beforeEach(() => {
       recipe_id INTEGER NOT NULL,
       ingredient_id INTEGER NOT NULL,
       quantity REAL NOT NULL,
-      unit TEXT NOT NULL,
+      unit_id INTEGER NOT NULL,
       FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
-      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE
+      FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE,
+      FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT
     );
 
     CREATE TABLE IF NOT EXISTS cart (
@@ -119,7 +145,14 @@ describe('Database - Ingredient Operations', () => {
 
 describe('Database - Recipe Operations', () => {
   test('should create a recipe with ingredients', () => {
-    // First create ingredients
+    // First create unit
+    const createUnit = db.prepare(`
+      INSERT INTO units (name, category, base_unit_id, to_base_factor) VALUES (@name, @category, @base_unit_id, @to_base_factor)
+    `);
+    const cup = createUnit.run({ name: 'cup', category: 'volume', base_unit_id: null, to_base_factor: null });
+    const cupId = cup.lastInsertRowid;
+
+    // Create ingredient
     const createIngredient = db.prepare(`
       INSERT INTO ingredients (name) VALUES (@name)
     `);
@@ -144,22 +177,23 @@ describe('Database - Recipe Operations', () => {
 
     // Link ingredient to recipe
     const createRecipeIngredient = db.prepare(`
-      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
-      VALUES (@recipe_id, @ingredient_id, @quantity, @unit)
+      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit_id)
+      VALUES (@recipe_id, @ingredient_id, @quantity, @unit_id)
     `);
 
     createRecipeIngredient.run({
       recipe_id: recipeId,
       ingredient_id: flourId,
       quantity: 2,
-      unit: 'cups'
+      unit_id: cupId
     });
 
     const recipe = db.prepare('SELECT * FROM recipes WHERE id = ?').get(recipeId);
     const recipeIngredients = db.prepare(`
-      SELECT i.name, ri.quantity, ri.unit
+      SELECT i.name, ri.quantity, u.name as unit
       FROM ingredients i
       INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+      INNER JOIN units u ON ri.unit_id = u.id
       WHERE ri.recipe_id = ?
     `).all(recipeId);
 
@@ -173,7 +207,7 @@ describe('Database - Recipe Operations', () => {
     expect(recipeIngredients[0]).toMatchObject({
       name: 'flour',
       quantity: 2,
-      unit: 'cups'
+      unit: 'cup'
     });
   });
 
@@ -194,6 +228,9 @@ describe('Database - Recipe Operations', () => {
   });
 
   test('should delete a recipe and its recipe_ingredients', () => {
+    // Create unit
+    const cup = db.prepare('INSERT INTO units (name, category) VALUES (?, ?)').run('cup', 'volume');
+
     // Create ingredient
     const createIngredient = db.prepare(`
       INSERT INTO ingredients (name) VALUES (@name)
@@ -210,9 +247,9 @@ describe('Database - Recipe Operations', () => {
 
     // Link ingredient
     db.prepare(`
-      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
+      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit_id)
       VALUES (?, ?, ?, ?)
-    `).run(recipeId, flour.lastInsertRowid, 2, 'cups');
+    `).run(recipeId, flour.lastInsertRowid, 2, cup.lastInsertRowid);
 
     // Delete the recipe
     db.prepare('DELETE FROM recipes WHERE id = ?').run(recipeId);
@@ -225,6 +262,9 @@ describe('Database - Recipe Operations', () => {
   });
 
   test('should update ingredient name and reflect in all recipes', () => {
+    // Create unit
+    const cup = db.prepare('INSERT INTO units (name, category) VALUES (?, ?)').run('cup', 'volume');
+
     // Create ingredient
     const createIngredient = db.prepare(`
       INSERT INTO ingredients (name) VALUES (@name)
@@ -242,18 +282,19 @@ describe('Database - Recipe Operations', () => {
 
     // Link ingredient
     db.prepare(`
-      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
+      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit_id)
       VALUES (?, ?, ?, ?)
-    `).run(recipeId, flourId, 2, 'cups');
+    `).run(recipeId, flourId, 2, cup.lastInsertRowid);
 
     // Update ingredient name
     db.prepare('UPDATE ingredients SET name = ? WHERE id = ?').run('whole wheat flour', flourId);
 
     // Check recipe still has updated ingredient
     const recipeIngredients = db.prepare(`
-      SELECT i.name, ri.quantity, ri.unit
+      SELECT i.name, ri.quantity, u.name as unit
       FROM ingredients i
       INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+      INNER JOIN units u ON ri.unit_id = u.id
       WHERE ri.recipe_id = ?
     `).all(recipeId);
 
@@ -351,6 +392,10 @@ describe('Database - Cart Operations', () => {
 
 describe('Database - Shopping List Operations', () => {
   test('should aggregate ingredients from cart recipes', () => {
+    // Create unit
+    const cup = db.prepare('INSERT INTO units (name, category) VALUES (?, ?)').run('cup', 'volume');
+    const cupId = cup.lastInsertRowid;
+
     // Create ingredients
     const createIngredient = db.prepare('INSERT INTO ingredients (name) VALUES (?)');
     const flourId = createIngredient.run('flour').lastInsertRowid;
@@ -366,12 +411,12 @@ describe('Database - Shopping List Operations', () => {
 
     // Link ingredients to recipes
     const createRecipeIngredient = db.prepare(`
-      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
+      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit_id)
       VALUES (?, ?, ?, ?)
     `);
-    createRecipeIngredient.run(recipe1.lastInsertRowid, flourId, 2, 'cups');
-    createRecipeIngredient.run(recipe2.lastInsertRowid, flourId, 1, 'cups');
-    createRecipeIngredient.run(recipe1.lastInsertRowid, sugarId, 1, 'cup');
+    createRecipeIngredient.run(recipe1.lastInsertRowid, flourId, 2, cupId);
+    createRecipeIngredient.run(recipe2.lastInsertRowid, flourId, 1, cupId);
+    createRecipeIngredient.run(recipe1.lastInsertRowid, sugarId, 1, cupId);
 
     // Add to cart
     db.prepare('INSERT INTO cart (recipe_id) VALUES (?)').run(recipe1.lastInsertRowid);
@@ -379,9 +424,10 @@ describe('Database - Shopping List Operations', () => {
 
     // Get shopping list
     const items = db.prepare(`
-      SELECT i.name, ri.quantity, ri.unit
+      SELECT i.name, ri.quantity, u.name as unit
       FROM ingredients i
       INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+      INNER JOIN units u ON ri.unit_id = u.id
       INNER JOIN cart c ON ri.recipe_id = c.recipe_id
       ORDER BY i.name
     `).all();
@@ -412,6 +458,9 @@ describe('Database - Shopping List Operations', () => {
 
 describe('Database - Export Operations', () => {
   test('should export all recipes with ingredients', () => {
+    // Create unit
+    const cup = db.prepare('INSERT INTO units (name, category) VALUES (?, ?)').run('cup', 'volume');
+
     // Create ingredient
     const createIngredient = db.prepare('INSERT INTO ingredients (name) VALUES (?)');
     const flourId = createIngredient.run('flour').lastInsertRowid;
@@ -430,17 +479,18 @@ describe('Database - Export Operations', () => {
 
     // Link ingredient
     db.prepare(`
-      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit)
+      INSERT INTO recipe_ingredients (recipe_id, ingredient_id, quantity, unit_id)
       VALUES (?, ?, ?, ?)
-    `).run(recipe1.lastInsertRowid, flourId, 2, 'cups');
+    `).run(recipe1.lastInsertRowid, flourId, 2, cup.lastInsertRowid);
 
     // Export logic
     const recipes = db.prepare('SELECT * FROM recipes').all();
     const exported = recipes.map(recipe => {
       const ingredients = db.prepare(`
-        SELECT i.name, ri.quantity, ri.unit
+        SELECT i.name, ri.quantity, u.name as unit
         FROM ingredients i
         INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
+        INNER JOIN units u ON ri.unit_id = u.id
         WHERE ri.recipe_id = ?
       `).all(recipe.id);
       return {
@@ -462,7 +512,7 @@ describe('Database - Export Operations', () => {
     expect(exported[0].ingredients[0]).toMatchObject({
       name: 'flour',
       quantity: 2,
-      unit: 'cups'
+      unit: 'cup'
     });
   });
 });

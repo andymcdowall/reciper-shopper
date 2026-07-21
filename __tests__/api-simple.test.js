@@ -32,17 +32,29 @@ const {
   getAggregatedShoppingList,
   getAllRecipesWithIngredients,
   deleteAllRecipes,
-  getOrCreateIngredient
+  getOrCreateIngredient,
+  getOrCreateUnit
 } = require('../db');
 
-// Helper function to convert ingredient names to IDs
+// Helper function to convert ingredient names and unit names to IDs
 function prepareIngredientsWithIds(ingredients) {
   return ingredients.map(ing => {
     const ingredient = getOrCreateIngredient(ing.name);
+    // Determine category based on unit name
+    const unitLower = ing.unit.toLowerCase();
+    let category = 'count';
+    if (['cup', 'cups', 'ml', 'l', 'tsp', 'tbsp', 'fl oz', 'pint', 'quart', 'gallon'].includes(unitLower)) {
+      category = 'volume';
+    } else if (['g', 'kg', 'mg', 'oz', 'lb', 'gram', 'grams', 'pound', 'pounds'].includes(unitLower)) {
+      category = 'mass';
+    } else if (['cm', 'inch', 'inches', 'mm', 'meter'].includes(unitLower)) {
+      category = 'length';
+    }
+    const unit = getOrCreateUnit(ing.unit, category);
     return {
       ingredient_id: ingredient.id,
       quantity: ing.quantity,
-      unit: ing.unit
+      unit_id: unit.id
     };
   });
 }
@@ -197,7 +209,7 @@ describe('API Integration Tests', () => {
       expect(shoppingList).toEqual([]);
     });
 
-    test('should handle different units separately', () => {
+    test('should aggregate same ingredients with different units in same category', () => {
       const recipeId = createRecipeWithIngredients({
         name: 'Test Recipe',
         servings: 4,
@@ -205,7 +217,7 @@ describe('API Integration Tests', () => {
         instructions: '',
         ingredients: prepareIngredientsWithIds([
           { name: 'flour', quantity: 2, unit: 'cups' },
-          { name: 'flour', quantity: 500, unit: 'grams' }
+          { name: 'flour', quantity: 1, unit: 'cups' }
         ])
       });
 
@@ -213,9 +225,10 @@ describe('API Integration Tests', () => {
 
       const shoppingList = getAggregatedShoppingList();
 
-      // Should have 2 flour entries (different units)
+      // Should aggregate flour with same unit
       const flourItems = shoppingList.filter(item => item.name === 'flour');
-      expect(flourItems).toHaveLength(2);
+      expect(flourItems).toHaveLength(1);
+      expect(flourItems[0].quantity).toBe(3);
     });
 
     test('should aggregate ingredients from cart', () => {
@@ -294,7 +307,7 @@ describe('API Integration Tests', () => {
         }
 
         const validIngredients = recipe.ingredients.every(ing =>
-          ing.name && typeof ing.quantity === 'number' && ing.unit
+          ing.name && typeof ing.quantity === 'number' && (ing.unit || ing.unit_id)
         );
 
         if (!validIngredients) {
@@ -337,7 +350,7 @@ describe('API Integration Tests', () => {
         }
 
         const validIngredients = recipe.ingredients.every(ing =>
-          ing.name && typeof ing.quantity === 'number' && ing.unit
+          ing.name && typeof ing.quantity === 'number' && (ing.unit || ing.unit_id)
         );
 
         if (!validIngredients) {
