@@ -1,4 +1,4 @@
-- [ ] Currently recipes are viewed in an alert. they should be viewed in a view similar to adding, except they are not editable by default; you have to hit the edit button, and it allows shows you the a ui similar to add (it should be reused)
+- [ X ] Currently recipes are viewed in an alert. they should be viewed in a view similar to adding, except they are not editable by default; you have to hit the edit button, and it allows shows you the a ui similar to add (it should be reused)
 - [ X ] Keep a list of ingredients, and autocomplete tPo an existing ingredient when possible. If not possible, option to add an ingredient
 - [ ] Unit should be dropdown of common options
 - [ ] Clear shopping cart

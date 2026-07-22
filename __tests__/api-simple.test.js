@@ -25,6 +25,7 @@ const {
   getAllRecipes,
   getRecipeWithIngredients,
   createRecipeWithIngredients,
+  updateRecipeWithIngredients,
   deleteRecipe,
   getCartRecipes,
   addToCart,
@@ -166,6 +167,61 @@ describe('API Integration Tests', () => {
 
       const recipe = getRecipeWithIngredients(recipeId);
       expect(recipe).toBeNull();
+    });
+
+    test('should update a recipe\'s core fields and fully replace its ingredient list', () => {
+      const recipeId = createRecipeWithIngredients({
+        name: 'Edit Ops Original',
+        servings: 2,
+        prep_time: 10,
+        instructions: 'Original instructions',
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
+      });
+
+      updateRecipeWithIngredients(recipeId, {
+        name: 'Edit Ops Updated',
+        servings: 6,
+        prep_time: 45,
+        instructions: 'Updated instructions',
+        ingredients: prepareIngredientsWithIds([
+          { name: 'sugar', quantity: 2, unit: 'cups' },
+          { name: 'eggs', quantity: 3, unit: 'whole' }
+        ])
+      });
+
+      const recipe = getRecipeWithIngredients(recipeId);
+
+      expect(recipe.name).toBe('Edit Ops Updated');
+      expect(recipe.servings).toBe(6);
+      expect(recipe.prep_time).toBe(45);
+      expect(recipe.instructions).toBe('Updated instructions');
+      expect(recipe.ingredients).toHaveLength(2);
+      expect(recipe.ingredients.map(i => i.name).sort()).toEqual(['eggs', 'sugar']);
+      // The original ingredient (flour) must be gone, not merged in alongside the new ones
+      expect(recipe.ingredients.find(i => i.name === 'flour')).toBeUndefined();
+    });
+
+    test('updating a recipe does not change its id or unrelated recipes', () => {
+      const otherRecipeId = createRecipeWithIngredients({
+        name: 'Edit Ops Untouched',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Edit Ops To Update',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
+      });
+
+      const result = updateRecipeWithIngredients(recipeId, {
+        name: 'Edit Ops Renamed',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: prepareIngredientsWithIds([{ name: 'flour', quantity: 1, unit: 'cup' }])
+      });
+
+      expect(result).toBe(recipeId);
+      expect(getRecipeWithIngredients(otherRecipeId).name).toBe('Edit Ops Untouched');
     });
   });
 

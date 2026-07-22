@@ -872,6 +872,11 @@ button:disabled:hover {
   padding-bottom: 1.5rem;
 }
 
+#recipe-detail-modal .modal-actions {
+  padding: 1.5rem;
+  margin-top: 0;
+}
+
 /* Store Selector */
 .store-selector {
   display: flex;

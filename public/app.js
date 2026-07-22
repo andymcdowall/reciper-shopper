@@ -12,6 +12,8 @@ let currentView = 'recipes';
 let editingIngredientId = null;
 let editingUnitId = null;
 let editingStoreId = null;
+let editingRecipeId = null;
+let currentDetailRecipeId = null;
 
 // API functions
 async function fetchRecipes() {
@@ -32,6 +34,19 @@ async function createRecipe(recipeData) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(recipeData)
   });
+  return await response.json();
+}
+
+async function updateRecipeAPI(id, recipeData) {
+  const response = await fetch(`/api/recipes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recipeData)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update recipe');
+  }
   return await response.json();
 }
 
@@ -658,6 +673,7 @@ function updateCartCount() {
 // Recipe actions
 async function viewRecipeDetails(id) {
   const recipe = await fetchRecipe(id);
+  currentDetailRecipeId = id;
 
   document.getElementById('recipe-detail-name').textContent = recipe.name;
   document.getElementById('recipe-detail-meta').innerHTML =
@@ -684,6 +700,59 @@ function closeRecipeDetailModal() {
   const modal = document.getElementById('recipe-detail-modal');
   modal.classList.remove('show');
   modal.style.display = 'none';
+}
+
+// Reuses the Add Recipe form/view for editing, per the product decision that recipes aren't
+// editable inline -- you view them read-only, then hit Edit to get the same UI used to add one.
+async function editRecipe(id) {
+  if (!id) return;
+
+  const recipe = await fetchRecipe(id);
+  closeRecipeDetailModal();
+  await Promise.all([fetchIngredients(), fetchUnits()]);
+
+  editingRecipeId = id;
+  document.getElementById('add-recipe-heading').textContent = 'Edit Recipe';
+  document.getElementById('save-recipe-btn').textContent = 'Update Recipe';
+
+  showView('add-recipe');
+  populateRecipeFormForEdit(recipe);
+}
+
+function populateRecipeFormForEdit(recipe) {
+  document.getElementById('recipe-name').value = recipe.name;
+  document.getElementById('recipe-servings').value = recipe.servings || '';
+  document.getElementById('recipe-prep-time').value = recipe.prep_time || '';
+  document.getElementById('recipe-instructions').value = recipe.instructions || '';
+
+  const container = document.getElementById('ingredients-list');
+  container.innerHTML = '';
+
+  recipe.ingredients.forEach(ing => {
+    const row = document.createElement('div');
+    row.className = 'ingredient-row';
+    row.innerHTML = `
+      <div class="ingredient-name-container">
+        <input type="text" class="ingredient-name" placeholder="Ingredient name" required autocomplete="off" value="${ing.name}">
+      </div>
+      <input type="hidden" class="ingredient-id" value="${ing.id}">
+      <input type="number" class="ingredient-quantity" placeholder="Qty" step="0.01" required value="${ing.quantity}">
+      <div class="unit-container">
+        <input type="text" class="unit-name" placeholder="Unit" required autocomplete="off" value="${ing.unit}">
+      </div>
+      <input type="hidden" class="unit-id" value="${ing.unit_id}">
+      <button type="button" class="btn-remove" onclick="removeIngredient(this)">Remove</button>
+    `;
+    container.appendChild(row);
+    attachIngredientAutocomplete(row.querySelector('.ingredient-name'));
+    attachUnitAutocomplete(row.querySelector('.unit-name'));
+  });
+}
+
+function resetRecipeFormToAddMode() {
+  editingRecipeId = null;
+  document.getElementById('add-recipe-heading').textContent = 'Add Recipe';
+  document.getElementById('save-recipe-btn').textContent = 'Save Recipe';
 }
 
 async function deleteRecipe(id) {
@@ -1567,7 +1636,11 @@ function updateModalBaseUnitDropdown() {
 
 // Event listeners
 document.getElementById('nav-recipes').addEventListener('click', () => showView('recipes'));
-document.getElementById('nav-add-recipe').addEventListener('click', () => showView('add-recipe'));
+document.getElementById('nav-add-recipe').addEventListener('click', () => {
+  resetRecipeFormToAddMode();
+  clearRecipeForm();
+  showView('add-recipe');
+});
 document.getElementById('nav-ingredients').addEventListener('click', () => showView('ingredients'));
 document.getElementById('nav-units').addEventListener('click', () => showView('units'));
 document.getElementById('nav-stores').addEventListener('click', () => showView('stores'));
@@ -1609,6 +1682,7 @@ document.getElementById('global-store-select').addEventListener('change', (e) =>
 });
 
 document.getElementById('cancel-recipe-btn').addEventListener('click', () => {
+  resetRecipeFormToAddMode();
   clearRecipeForm();
   showView('recipes');
 });
@@ -1672,7 +1746,18 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
     return;
   }
 
-  await createRecipe({ name, servings, prep_time, instructions, ingredients: ingredientsData });
+  try {
+    if (editingRecipeId) {
+      await updateRecipeAPI(editingRecipeId, { name, servings, prep_time, instructions, ingredients: ingredientsData });
+    } else {
+      await createRecipe({ name, servings, prep_time, instructions, ingredients: ingredientsData });
+    }
+  } catch (error) {
+    alert('Failed to save recipe: ' + error.message);
+    return;
+  }
+
+  resetRecipeFormToAddMode();
   clearRecipeForm();
   showView('recipes');
 });

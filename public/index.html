@@ -37,7 +37,7 @@
 
       <!-- Add Recipe View -->
       <section id="add-recipe-view" class="view">
-        <h2>Add Recipe</h2>
+        <h2 id="add-recipe-heading">Add Recipe</h2>
         <form id="recipe-form">
           <div class="form-group">
             <label for="recipe-name">Recipe Name *</label>
@@ -80,7 +80,7 @@
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn-primary">Save Recipe</button>
+            <button type="submit" id="save-recipe-btn" class="btn-primary">Save Recipe</button>
             <button type="button" id="cancel-recipe-btn" class="btn-secondary">Cancel</button>
           </div>
         </form>
@@ -234,6 +234,10 @@
       <div id="recipe-detail-ingredients"></div>
       <div id="recipe-detail-instructions"></div>
       <div id="recipe-detail-cost"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="editRecipe(currentDetailRecipeId)">Edit</button>
+        <button type="button" class="btn-secondary" onclick="closeRecipeDetailModal()">Close</button>
+      </div>
     </div>
   </div>
 

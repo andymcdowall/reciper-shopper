@@ -136,6 +136,13 @@ const createRecipeIngredient = db.prepare(`
   VALUES (@recipe_id, @ingredient_id, @quantity, @unit_id)
 `);
 
+const updateRecipeFields = db.prepare(`
+  UPDATE recipes SET name = @name, servings = @servings, prep_time = @prep_time, instructions = @instructions
+  WHERE id = @id
+`);
+
+const deleteRecipeIngredientsByRecipeId = db.prepare('DELETE FROM recipe_ingredients WHERE recipe_id = ?');
+
 const deleteRecipe = db.prepare('DELETE FROM recipes WHERE id = ?');
 
 // Ingredient queries
@@ -399,6 +406,34 @@ function createRecipeWithIngredients(recipeData) {
     }
 
     return recipeId;
+  });
+
+  return transaction(recipeData);
+}
+
+// Replaces a recipe's core fields and its entire ingredient list in one transaction.
+function updateRecipeWithIngredients(id, recipeData) {
+  const transaction = db.transaction((data) => {
+    updateRecipeFields.run({
+      id,
+      name: data.name,
+      servings: data.servings,
+      prep_time: data.prep_time,
+      instructions: data.instructions
+    });
+
+    deleteRecipeIngredientsByRecipeId.run(id);
+
+    for (const ingredient of data.ingredients) {
+      createRecipeIngredient.run({
+        recipe_id: id,
+        ingredient_id: ingredient.ingredient_id,
+        quantity: ingredient.quantity,
+        unit_id: ingredient.unit_id
+      });
+    }
+
+    return id;
   });
 
   return transaction(recipeData);
@@ -862,6 +897,7 @@ module.exports = {
   getRecipeById,
   getRecipeWithIngredients,
   createRecipeWithIngredients,
+  updateRecipeWithIngredients,
   deleteRecipe,
   getCartRecipeIds,
   getCartRecipes,

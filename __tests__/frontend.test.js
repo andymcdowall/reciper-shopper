@@ -235,6 +235,22 @@ describe('Form Elements', () => {
     expect(document.getElementById('cancel-recipe-btn')).toBeTruthy();
   });
 
+  test('should have addressable heading/submit-button elements for switching between add and edit mode', () => {
+    const heading = document.getElementById('add-recipe-heading');
+    const saveBtn = document.getElementById('save-recipe-btn');
+    expect(heading).toBeTruthy();
+    expect(heading.textContent).toBe('Add Recipe');
+    expect(saveBtn).toBeTruthy();
+    expect(saveBtn.textContent).toBe('Save Recipe');
+  });
+
+  test('should have an Edit button on the recipe detail modal', () => {
+    const modal = document.getElementById('recipe-detail-modal');
+    const editButton = Array.from(modal.querySelectorAll('button')).find(b => b.textContent.trim() === 'Edit');
+    expect(editButton).toBeTruthy();
+    expect(editButton.getAttribute('onclick')).toContain('editRecipe(');
+  });
+
   test('should have at least one ingredient row by default', () => {
     const ingredientsList = document.getElementById('ingredients-list');
     const rows = ingredientsList.querySelectorAll('.ingredient-row');

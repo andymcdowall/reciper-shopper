@@ -3,8 +3,10 @@ const path = require('path');
 const fs = require('fs');
 const {
   getAllRecipes,
+  getRecipeById,
   getRecipeWithIngredients,
   createRecipeWithIngredients,
+  updateRecipeWithIngredients,
   deleteRecipe,
   getCartRecipes,
   addToCart,
@@ -178,6 +180,41 @@ app.post('/api/recipes', (req, res) => {
 
     const recipe = getRecipeWithIngredients(recipeId);
     res.status(201).json(recipe);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/recipes/:id', (req, res) => {
+  try {
+    const { name, servings, prep_time, instructions, ingredients } = req.body;
+
+    if (!name || !ingredients || !Array.isArray(ingredients) || ingredients.length === 0) {
+      return res.status(400).json({ error: 'Name and at least one ingredient are required' });
+    }
+
+    const validIngredients = ingredients.every(ing =>
+      ing.ingredient_id && typeof ing.quantity === 'number' && ing.unit_id
+    );
+
+    if (!validIngredients) {
+      return res.status(400).json({ error: 'Each ingredient must have ingredient_id, quantity, and unit_id' });
+    }
+
+    if (!getRecipeById.get(req.params.id)) {
+      return res.status(404).json({ error: 'Recipe not found' });
+    }
+
+    updateRecipeWithIngredients(req.params.id, {
+      name,
+      servings: servings || null,
+      prep_time: prep_time || null,
+      instructions: instructions || '',
+      ingredients
+    });
+
+    const recipe = getRecipeWithIngredients(req.params.id);
+    res.json(recipe);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
