@@ -12,6 +12,10 @@ const {
   getAggregatedShoppingList,
   getAllRecipesWithIngredients,
   deleteAllRecipes,
+  getManualListItems,
+  getManualListItemById,
+  addManualListItem,
+  deleteManualListItem,
   getAllIngredients,
   getIngredientById,
   getOrCreateIngredient,
@@ -227,6 +231,50 @@ app.get('/api/shopping-list', (req, res) => {
   try {
     const shoppingList = getAggregatedShoppingList();
     res.json(shoppingList);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual (directly-added, not recipe-derived) shopping list item routes
+app.get('/api/list/items', (req, res) => {
+  try {
+    res.json(getManualListItems.all());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/list/items', (req, res) => {
+  try {
+    const { ingredient_id, quantity, unit_id } = req.body;
+
+    if (!ingredient_id || typeof quantity !== 'number' || quantity <= 0 || !unit_id) {
+      return res.status(400).json({ error: 'ingredient_id, a positive quantity, and unit_id are required' });
+    }
+
+    if (!getIngredientById.get(ingredient_id)) {
+      return res.status(400).json({ error: 'Invalid ingredient_id' });
+    }
+
+    if (!getUnitById.get(unit_id)) {
+      return res.status(400).json({ error: 'Invalid unit_id' });
+    }
+
+    const item = addManualListItem({ ingredient_id, quantity, unit_id });
+    res.status(201).json(item);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/list/items/:id', (req, res) => {
+  try {
+    if (!getManualListItemById.get(req.params.id)) {
+      return res.status(404).json({ error: 'List item not found' });
+    }
+    deleteManualListItem.run(req.params.id);
+    res.json({ message: 'List item removed' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -49,7 +49,11 @@ const {
   getPriceStalenessDays,
   setPriceStalenessDays,
   getRecipeCost,
-  getAggregatedCartCost
+  getAggregatedCartCost,
+  getManualListItems,
+  addManualListItem,
+  deleteManualListItem,
+  deleteAllManualListItems
 } = require('../db');
 
 // Helper function to convert ingredient names and unit names to IDs
@@ -90,6 +94,7 @@ describe('API Integration Tests', () => {
     // Clear all data before each test
     try {
       deleteAllRecipes();
+      deleteAllManualListItems.run();
     } catch (e) {
       // Database might be empty
     }
@@ -279,6 +284,137 @@ describe('API Integration Tests', () => {
 
       const flour = shoppingList.find(item => item.name === 'flour');
       expect(flour.quantity).toBe(3);
+    });
+  });
+
+  describe('Manual List Items', () => {
+    test('a manually-added item with no recipes in the cart appears on the shopping list, highlighted', () => {
+      const unit = getOrCreateUnit('Manual Ops Each', 'count');
+      const ingredient = getOrCreateIngredient('Manual Ops Standalone Item');
+
+      addManualListItem({ ingredient_id: ingredient.id, quantity: 3, unit_id: unit.id });
+
+      const shoppingList = getAggregatedShoppingList();
+      const item = shoppingList.find(i => i.name === 'Manual Ops Standalone Item');
+
+      expect(item).toBeDefined();
+      expect(item.quantity).toBe(3);
+      expect(item.has_manual).toBe(true);
+      expect(item.manual_entries).toHaveLength(1);
+      expect(item.manual_entries[0].quantity).toBe(3);
+    });
+
+    test('a manually-added quantity merges into a recipe-derived total for the same ingredient', () => {
+      const unit = getOrCreateUnit('Manual Ops Tbsp', 'volume');
+      const ingredient = getOrCreateIngredient('Manual Ops Merge Item');
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Manual Ops Recipe A',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 2, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+      addManualListItem({ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id });
+
+      const shoppingList = getAggregatedShoppingList();
+      const item = shoppingList.find(i => i.name === 'Manual Ops Merge Item');
+
+      expect(item.quantity).toBe(3); // 2 from the recipe + 1 added manually, merged into one total
+      expect(item.has_manual).toBe(true);
+      expect(item.manual_entries).toHaveLength(1);
+      expect(item.manual_entries[0].quantity).toBe(1); // only the manually-added portion
+    });
+
+    test('a purely recipe-derived item is not flagged as manual', () => {
+      const unit = getOrCreateUnit('Manual Ops Cup No Manual', 'volume');
+      const ingredient = getOrCreateIngredient('Manual Ops Recipe Only Item');
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Manual Ops Recipe B',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const shoppingList = getAggregatedShoppingList();
+      const item = shoppingList.find(i => i.name === 'Manual Ops Recipe Only Item');
+
+      expect(item.has_manual).toBe(false);
+      expect(item.manual_entries).toHaveLength(0);
+    });
+
+    test('deleting a manual entry removes just that quantity, leaving the recipe-derived portion intact', () => {
+      const unit = getOrCreateUnit('Manual Ops Gram Delete', 'mass');
+      const ingredient = getOrCreateIngredient('Manual Ops Deletable Item');
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Manual Ops Recipe C',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 5, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+      const manualItem = addManualListItem({ ingredient_id: ingredient.id, quantity: 2, unit_id: unit.id });
+
+      expect(getAggregatedShoppingList().find(i => i.name === 'Manual Ops Deletable Item').quantity).toBe(7);
+
+      deleteManualListItem.run(manualItem.id);
+
+      const afterDelete = getAggregatedShoppingList().find(i => i.name === 'Manual Ops Deletable Item');
+      expect(afterDelete.quantity).toBe(5); // back to just the recipe's 5
+      expect(afterDelete.has_manual).toBe(false);
+    });
+
+    test('multiple separate manual additions for the same ingredient are each independently removable', () => {
+      const unit = getOrCreateUnit('Manual Ops Each Multi', 'count');
+      const ingredient = getOrCreateIngredient('Manual Ops Multi Add Item');
+
+      const first = addManualListItem({ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id });
+      const second = addManualListItem({ ingredient_id: ingredient.id, quantity: 4, unit_id: unit.id });
+
+      let item = getAggregatedShoppingList().find(i => i.name === 'Manual Ops Multi Add Item');
+      expect(item.quantity).toBe(5);
+      expect(item.manual_entries).toHaveLength(2);
+
+      deleteManualListItem.run(first.id);
+
+      item = getAggregatedShoppingList().find(i => i.name === 'Manual Ops Multi Add Item');
+      expect(item.quantity).toBe(4);
+      expect(item.manual_entries).toHaveLength(1);
+      expect(item.manual_entries[0].id).toBe(second.id);
+    });
+
+    test('manual quantities are aggregated before cost rounding, same as recipe quantities', () => {
+      const unit = getOrCreateUnit('Manual Ops Tbsp Cost', 'volume');
+      const ingredient = getOrCreateIngredient('Manual Ops Cost Item');
+      const store = getOrCreateStore('Manual Ops Cost Store');
+
+      // 48-tbsp bottle; recipe needs 40 tbsp, manual add is 8 tbsp -> combined 48 exactly = 1 bottle
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 48, package_unit_id: unit.id, price: 4.99, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Manual Ops Recipe D',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 40, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+      addManualListItem({ ingredient_id: ingredient.id, quantity: 8, unit_id: unit.id });
+
+      const cost = getAggregatedCartCost(store.id);
+      expect(cost.items[0].packages_needed).toBe(1);
+      expect(cost.total_cost).toBe(4.99);
+    });
+
+    test('getManualListItems lists all manual rows regardless of ingredient', () => {
+      const unit = getOrCreateUnit('Manual Ops List Unit', 'count');
+      const ingredient = getOrCreateIngredient('Manual Ops List Item');
+      const before = getManualListItems.all().length;
+
+      addManualListItem({ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id });
+
+      expect(getManualListItems.all().length).toBe(before + 1);
     });
   });
 

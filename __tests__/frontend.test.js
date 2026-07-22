@@ -34,7 +34,7 @@ describe('Recipe Form Handling', () => {
     document.getElementById('recipe-instructions').value = 'Test instructions';
 
     // Set ingredient values
-    const ingredientRow = document.querySelector('.ingredient-row');
+    const ingredientRow = document.querySelector('#ingredients-list .ingredient-row');
     ingredientRow.querySelector('.ingredient-name').value = 'flour';
     ingredientRow.querySelector('.ingredient-quantity').value = '2';
     ingredientRow.querySelector('.unit-name').value = 'cups';
@@ -45,7 +45,7 @@ describe('Recipe Form Handling', () => {
     const prep_time = parseInt(document.getElementById('recipe-prep-time').value) || null;
     const instructions = document.getElementById('recipe-instructions').value;
 
-    const ingredientRows = document.querySelectorAll('.ingredient-row');
+    const ingredientRows = document.querySelectorAll('#ingredients-list .ingredient-row');
     const ingredients = Array.from(ingredientRows).map(row => ({
       name: row.querySelector('.ingredient-name').value,
       quantity: parseFloat(row.querySelector('.ingredient-quantity').value),
@@ -76,7 +76,7 @@ describe('Recipe Form Handling', () => {
   });
 
   test('should validate at least one ingredient exists', () => {
-    const ingredientRows = document.querySelectorAll('.ingredient-row');
+    const ingredientRows = document.querySelectorAll('#ingredients-list .ingredient-row');
     expect(ingredientRows.length).toBeGreaterThan(0);
   });
 });
@@ -126,6 +126,18 @@ describe('Store & Cost UI Elements', () => {
   test('should have a reset-to-common-units control on the units view', () => {
     expect(document.getElementById('reset-units-btn')).toBeTruthy();
     expect(document.getElementById('reset-units-result')).toBeTruthy();
+  });
+
+  test('should have a manual add-to-list form on the shopping list view, scoped separately from the recipe form', () => {
+    const form = document.getElementById('manual-list-form');
+    expect(form).toBeTruthy();
+    expect(form.querySelector('.ingredient-name')).toBeTruthy();
+    expect(form.querySelector('.ingredient-quantity')).toBeTruthy();
+    expect(form.querySelector('.unit-name')).toBeTruthy();
+
+    // Must not be picked up by the recipe form's ingredient-row queries
+    const recipeFormRows = document.querySelectorAll('#ingredients-list .ingredient-row');
+    expect(Array.from(recipeFormRows)).not.toContain(form);
   });
 
   test('should have a global store selector in the header', () => {
@@ -475,6 +487,63 @@ describe('Cost Summary Rendering Logic', () => {
 
     expect(html).not.toContain('price-stale');
     expect(html).not.toContain('stale-badge');
+  });
+});
+
+describe('Manual List Item Rendering Logic', () => {
+  // Mirrors the relevant slice of renderShoppingList() in public/app.js
+  function renderListItem(item) {
+    return `
+      <li class="${item.has_manual ? 'manually-added' : ''}">
+        <label>${item.quantity} ${item.unit} ${item.name}</label>
+        ${item.has_manual ? `
+          <span class="manual-badge">added directly</span>
+          <span class="manual-entries">
+            ${item.manual_entries.map(entry => `
+              <span class="manual-entry-chip">
+                +${entry.quantity} ${entry.unit_name}
+                <button type="button" class="manual-entry-remove" onclick="deleteManualListItemUI(${entry.id})">&times;</button>
+              </span>
+            `).join('')}
+          </span>
+        ` : ''}
+      </li>
+    `;
+  }
+
+  test('a purely recipe-derived item renders with no highlight or badge', () => {
+    const html = renderListItem({ name: 'flour', quantity: 2, unit: 'cups', has_manual: false, manual_entries: [] });
+
+    expect(html).not.toContain('manually-added');
+    expect(html).not.toContain('manual-badge');
+  });
+
+  test('an item with a manual contribution is highlighted with a badge and a removable chip', () => {
+    const html = renderListItem({
+      name: 'olive oil',
+      quantity: 3,
+      unit: 'tbsp',
+      has_manual: true,
+      manual_entries: [{ id: 7, quantity: 1, unit_name: 'tbsp' }]
+    });
+
+    expect(html).toContain('manually-added');
+    expect(html).toContain('manual-badge');
+    expect(html).toContain('+1 tbsp');
+    expect(html).toContain('deleteManualListItemUI(7)');
+  });
+
+  test('multiple manual entries for the same item each render their own removable chip', () => {
+    const html = renderListItem({
+      name: 'eggs',
+      quantity: 5,
+      unit: 'each',
+      has_manual: true,
+      manual_entries: [{ id: 1, quantity: 2, unit_name: 'each' }, { id: 2, quantity: 3, unit_name: 'each' }]
+    });
+
+    expect(html).toContain('deleteManualListItemUI(1)');
+    expect(html).toContain('deleteManualListItemUI(2)');
   });
 });
 

@@ -88,6 +88,16 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS manual_list_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ingredient_id INTEGER NOT NULL,
+    quantity REAL NOT NULL,
+    unit_id INTEGER NOT NULL,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE CASCADE,
+    FOREIGN KEY (unit_id) REFERENCES units(id) ON DELETE RESTRICT
+  );
 `);
 
 // Migrations
@@ -248,6 +258,36 @@ const getShoppingList = db.prepare(`
   INNER JOIN cart c ON ri.recipe_id = c.recipe_id
   ORDER BY i.name
 `);
+
+// Manual (directly-added, not recipe-derived) shopping list item queries
+const getManualListItems = db.prepare(`
+  SELECT m.id as manual_item_id, i.id as ingredient_id, i.name, i.preferred_unit_id,
+         m.quantity, m.unit_id, u.name as unit, u.category
+  FROM manual_list_items m
+  INNER JOIN ingredients i ON m.ingredient_id = i.id
+  INNER JOIN units u ON m.unit_id = u.id
+  ORDER BY i.name
+`);
+
+const getManualListItemById = db.prepare('SELECT * FROM manual_list_items WHERE id = ?');
+
+const insertManualListItem = db.prepare(`
+  INSERT INTO manual_list_items (ingredient_id, quantity, unit_id)
+  VALUES (@ingredient_id, @quantity, @unit_id)
+`);
+
+const deleteManualListItem = db.prepare('DELETE FROM manual_list_items WHERE id = ?');
+
+const deleteAllManualListItems = db.prepare('DELETE FROM manual_list_items');
+
+function addManualListItem(data) {
+  const result = insertManualListItem.run({
+    ingredient_id: data.ingredient_id,
+    quantity: data.quantity,
+    unit_id: data.unit_id
+  });
+  return getManualListItemById.get(result.lastInsertRowid);
+}
 
 // Store queries
 const getAllStores = db.prepare('SELECT * FROM stores ORDER BY name ASC');
@@ -454,7 +494,9 @@ function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
 // shared aggregation step used both for the display shopping list and for cart cost math, which
 // need to aggregate quantities BEFORE rounding up to whole packages (see getAggregatedCartCost).
 function aggregateCartIngredients() {
-  const items = getShoppingList.all();
+  const recipeItems = getShoppingList.all().map(item => ({ ...item, is_manual: false, manual_item_id: null }));
+  const manualItems = getManualListItems.all().map(item => ({ ...item, is_manual: true }));
+  const items = [...recipeItems, ...manualItems];
   const aggregated = {};
 
   for (const item of items) {
@@ -471,7 +513,10 @@ function aggregateCartIngredients() {
 
     aggregated[key].items.push({
       quantity: item.quantity,
-      unit_id: item.unit_id
+      unit_id: item.unit_id,
+      unit_name: item.unit,
+      is_manual: item.is_manual,
+      manual_item_id: item.manual_item_id
     });
   }
 
@@ -488,6 +533,7 @@ function aggregateCartIngredients() {
     if (!targetUnitId) continue;
 
     let totalQuantity = 0;
+    const manualEntries = [];
     for (const item of group.items) {
       try {
         const converted = convertUnits(item.unit_id, targetUnitId, item.quantity, group.ingredient_id);
@@ -498,13 +544,19 @@ function aggregateCartIngredients() {
           totalQuantity += item.quantity;
         }
       }
+
+      if (item.is_manual) {
+        manualEntries.push({ id: item.manual_item_id, quantity: item.quantity, unit_name: item.unit_name });
+      }
     }
 
     result.push({
       ingredient_id: group.ingredient_id,
       name: group.name,
       unit_id: targetUnitId,
-      quantity: totalQuantity
+      quantity: totalQuantity,
+      has_manual: manualEntries.length > 0,
+      manual_entries: manualEntries
     });
   }
 
@@ -525,9 +577,12 @@ function getAggregatedShoppingList() {
     }
 
     return {
+      ingredient_id: group.ingredient_id,
       name: group.name,
       quantity: displayQuantity,
-      unit: targetUnit.name
+      unit: targetUnit.name,
+      has_manual: group.has_manual,
+      manual_entries: group.manual_entries
     };
   }).filter(Boolean);
 }
@@ -815,6 +870,12 @@ module.exports = {
   getAggregatedShoppingList,
   getAllRecipesWithIngredients,
   deleteAllRecipes,
+  // Manual list item exports
+  getManualListItems,
+  getManualListItemById,
+  addManualListItem,
+  deleteManualListItem,
+  deleteAllManualListItems,
   // Ingredient exports
   getAllIngredients,
   getIngredientById,

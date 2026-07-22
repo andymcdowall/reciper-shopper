@@ -69,6 +69,24 @@ async function fetchShoppingList() {
   renderShoppingList(items, cost);
 }
 
+// Manual (directly-added) list item API functions
+async function addManualListItemAPI(ingredient_id, quantity, unit_id) {
+  const response = await fetch('/api/list/items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ingredient_id, quantity, unit_id })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to add item to list');
+  }
+  return await response.json();
+}
+
+async function deleteManualListItemAPI(id) {
+  await fetch(`/api/list/items/${id}`, { method: 'DELETE' });
+}
+
 // Ingredient API functions
 async function fetchIngredients() {
   const response = await fetch('/api/ingredients');
@@ -307,7 +325,7 @@ function renderShoppingList(items, cost) {
   const container = document.getElementById('shopping-list-items');
 
   if (items.length === 0) {
-    container.innerHTML = '<p class="empty-state">No items in shopping list. Add recipes to your cart first!</p>';
+    container.innerHTML = '<p class="empty-state">No items in shopping list. Add recipes to your cart, or add an ingredient directly above!</p>';
     return;
   }
 
@@ -319,11 +337,22 @@ function renderShoppingList(items, cost) {
     ${costHtml}
     <ul class="shopping-list">
       ${items.map(item => `
-        <li>
+        <li class="${item.has_manual ? 'manually-added' : ''}">
           <input type="checkbox" id="item-${item.name}">
           <label for="item-${item.name}">
             ${item.quantity} ${item.unit} ${item.name}
           </label>
+          ${item.has_manual ? `
+            <span class="manual-badge">added directly</span>
+            <span class="manual-entries">
+              ${item.manual_entries.map(entry => `
+                <span class="manual-entry-chip">
+                  +${entry.quantity} ${entry.unit_name}
+                  <button type="button" class="manual-entry-remove" onclick="deleteManualListItemUI(${entry.id})" title="Remove this addition">&times;</button>
+                </span>
+              `).join('')}
+            </span>
+          ` : ''}
         </li>
       `).join('')}
     </ul>
@@ -606,7 +635,7 @@ function showView(viewName) {
   } else if (viewName === 'cart') {
     fetchCart();
   } else if (viewName === 'shopping-list') {
-    fetchShoppingList();
+    Promise.all([fetchIngredients(), fetchUnits()]).then(() => fetchShoppingList());
   } else if (viewName === 'ingredients') {
     Promise.all([fetchIngredients(), fetchUnits(), fetchStores()]).then(() => renderIngredients());
   } else if (viewName === 'units') {
@@ -662,6 +691,57 @@ async function deleteRecipe(id) {
 
   await deleteRecipeById(id);
   await fetchRecipes();
+}
+
+// Manual (directly-added) list item actions
+async function addManualListItemFromForm() {
+  const nameInput = document.getElementById('manual-item-name');
+  const idInput = document.getElementById('manual-item-ingredient-id');
+  const quantityInput = document.getElementById('manual-item-quantity');
+  const unitNameInput = document.getElementById('manual-item-unit-name');
+  const unitIdInput = document.getElementById('manual-item-unit-id');
+
+  const ingredientName = nameInput.value.trim();
+  const quantity = parseFloat(quantityInput.value);
+  const unitName = unitNameInput.value.trim();
+
+  if (!ingredientName || !quantity || !unitName) {
+    alert('Please fill in ingredient, quantity, and unit');
+    return;
+  }
+
+  let ingredientId = idInput.value;
+  if (!ingredientId) {
+    let ingredient = ingredients.find(ing => ing.name.toLowerCase() === ingredientName.toLowerCase());
+    if (!ingredient) {
+      ingredient = await createIngredientAPI(ingredientName);
+      await fetchIngredients();
+    }
+    ingredientId = ingredient.id;
+  }
+
+  const unitId = unitIdInput.value;
+  if (!unitId) {
+    alert(`Unit "${unitName}" not found. Please select an existing unit or create it in the Units tab first.`);
+    return;
+  }
+
+  try {
+    await addManualListItemAPI(parseInt(ingredientId), quantity, parseInt(unitId));
+
+    document.getElementById('manual-list-form').reset();
+    idInput.value = '';
+    unitIdInput.value = '';
+
+    await fetchShoppingList();
+  } catch (error) {
+    alert('Failed to add item to list: ' + error.message);
+  }
+}
+
+async function deleteManualListItemUI(id) {
+  await deleteManualListItemAPI(id);
+  await fetchShoppingList();
 }
 
 // Ingredient actions
@@ -1538,7 +1618,7 @@ document.getElementById('recipe-form').addEventListener('submit', async (e) => {
   const prep_time = parseInt(document.getElementById('recipe-prep-time').value) || null;
   const instructions = document.getElementById('recipe-instructions').value;
 
-  const ingredientRows = document.querySelectorAll('.ingredient-row');
+  const ingredientRows = document.querySelectorAll('#ingredients-list .ingredient-row');
   const ingredientsData = [];
 
   for (const row of ingredientRows) {
@@ -1656,9 +1736,18 @@ Promise.all([fetchStores(), fetchSettings()]).then(() => renderStoreSelectOption
 
 // Attach autocomplete to initial ingredient row
 document.addEventListener('DOMContentLoaded', () => {
-  const initialRow = document.querySelector('.ingredient-row');
+  const initialRow = document.querySelector('#ingredients-list .ingredient-row');
   if (initialRow) {
     attachIngredientAutocomplete(initialRow.querySelector('.ingredient-name'));
     attachUnitAutocomplete(initialRow.querySelector('.unit-name'));
   }
+
+  const manualListForm = document.getElementById('manual-list-form');
+  attachIngredientAutocomplete(manualListForm.querySelector('.ingredient-name'));
+  attachUnitAutocomplete(manualListForm.querySelector('.unit-name'));
+});
+
+document.getElementById('manual-list-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  await addManualListItemFromForm();
 });
