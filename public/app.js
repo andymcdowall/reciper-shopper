@@ -1207,7 +1207,10 @@ async function importRecipes() {
     const response = await fetch('/api/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipes: data.recipes, mode })
+      // Forward the whole parsed file (not just recipes) plus mode, so units/ingredients/
+      // stores/prices/manual list items round-trip too, and any future export field is
+      // forwarded automatically without needing to remember to list it here.
+      body: JSON.stringify({ ...data, mode })
     });
 
     const result = await response.json();

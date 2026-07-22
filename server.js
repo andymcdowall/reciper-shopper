@@ -793,14 +793,23 @@ app.get('/api/export', (req, res) => {
       })));
     }
 
+    const manualListItems = getManualListItems.all().map(m => ({
+      ingredient_id: m.ingredient_id,
+      ingredient_name: m.name,
+      quantity: m.quantity,
+      unit_id: m.unit_id,
+      unit_name: m.unit
+    }));
+
     const exportData = {
-      version: '4.0',
+      version: '5.0',
       exported_at: new Date().toISOString(),
       units: units,
       ingredients: ingredients,
       ingredient_conversions: allConversions,
       stores: stores,
       prices: allPrices,
+      manual_list_items: manualListItems,
       recipes: recipes
     };
     res.json(exportData);
@@ -812,7 +821,7 @@ app.get('/api/export', (req, res) => {
 // Import route
 app.post('/api/import', (req, res) => {
   try {
-    const { recipes, ingredients: importedIngredients, units: importedUnits, ingredient_conversions: importedConversions, stores: importedStores, prices: importedPrices, mode } = req.body;
+    const { recipes, ingredients: importedIngredients, units: importedUnits, ingredient_conversions: importedConversions, stores: importedStores, prices: importedPrices, manual_list_items: importedManualItems, mode } = req.body;
 
     if (!recipes || !Array.isArray(recipes)) {
       return res.status(400).json({ error: 'Invalid import data: recipes array is required' });
@@ -934,6 +943,23 @@ app.post('/api/import', (req, res) => {
           } catch (error) {
             console.log(`Skipping price import for ingredient ${newIngredientId}/store ${newStoreId}: ${error.message}`);
           }
+        }
+      }
+    }
+
+    // Import manual (directly-added) list items if provided (for v5.0 format)
+    if (importedManualItems && Array.isArray(importedManualItems)) {
+      for (const m of importedManualItems) {
+        const newIngredientId = m.ingredient_id !== undefined
+          ? ingredientMap[m.ingredient_id]
+          : (m.ingredient_name ? ingredientMap[m.ingredient_name.toLowerCase()] : null);
+
+        const newUnitId = m.unit_id !== undefined
+          ? unitMap[m.unit_id]
+          : (m.unit_name ? unitMap[m.unit_name.toLowerCase()] : null);
+
+        if (newIngredientId && newUnitId && typeof m.quantity === 'number') {
+          addManualListItem({ ingredient_id: newIngredientId, quantity: m.quantity, unit_id: newUnitId });
         }
       }
     }

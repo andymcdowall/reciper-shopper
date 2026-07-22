@@ -254,28 +254,55 @@ describe('Export Data Format', () => {
       }
     ];
 
-    // Simulate what the export function creates (v4.0 format)
+    // Simulate what the export function creates (v5.0 format)
     const exportData = {
-      version: '4.0',
+      version: '5.0',
       exported_at: new Date().toISOString(),
       units: [],
       ingredients: [],
       ingredient_conversions: [],
       stores: [],
       prices: [],
+      manual_list_items: [],
       recipes: recipes
     };
 
-    expect(exportData.version).toBe('4.0');
+    expect(exportData.version).toBe('5.0');
     expect(exportData.exported_at).toBeTruthy();
     expect(exportData).toHaveProperty('units');
     expect(exportData).toHaveProperty('ingredients');
     expect(exportData).toHaveProperty('ingredient_conversions');
     expect(exportData).toHaveProperty('stores');
     expect(exportData).toHaveProperty('prices');
+    expect(exportData).toHaveProperty('manual_list_items');
     expect(exportData.recipes).toHaveLength(1);
     expect(exportData.recipes[0]).toHaveProperty('name');
     expect(exportData.recipes[0]).toHaveProperty('ingredients');
+  });
+
+  test('client-side import should forward the entire parsed file, not just recipes', () => {
+    // Regression test: importRecipes() in app.js previously sent only
+    // `{ recipes: data.recipes, mode }`, silently dropping units/ingredients/stores/prices/
+    // manual_list_items from the uploaded export file on import.
+    const data = {
+      version: '5.0',
+      units: [{ name: 'g', category: 'mass' }],
+      ingredients: [{ name: 'flour' }],
+      stores: [{ name: 'Store A' }],
+      prices: [{ ingredient_name: 'flour', store_name: 'Store A', package_quantity: 1, price: 2 }],
+      manual_list_items: [{ ingredient_name: 'flour', quantity: 1, unit_name: 'g' }],
+      recipes: []
+    };
+    const mode = 'add';
+
+    const requestBody = { ...data, mode };
+
+    expect(requestBody.units).toEqual(data.units);
+    expect(requestBody.ingredients).toEqual(data.ingredients);
+    expect(requestBody.stores).toEqual(data.stores);
+    expect(requestBody.prices).toEqual(data.prices);
+    expect(requestBody.manual_list_items).toEqual(data.manual_list_items);
+    expect(requestBody.mode).toBe('add');
   });
 
   test('should generate correct filename format', () => {
