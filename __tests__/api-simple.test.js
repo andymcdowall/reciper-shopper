@@ -753,6 +753,145 @@ describe('API Integration Tests', () => {
     });
   });
 
+  describe('Cross-Store Substitution (shopping list only)', () => {
+    test('getAggregatedCartCost patches in the only other store\'s price when the selected store has none', () => {
+      const unit = getOrCreateUnit('Sub Ops Each', 'count');
+      const ingredient = getOrCreateIngredient('Sub Ops Single Candidate Item');
+      const selectedStore = getOrCreateStore('Sub Ops Selected Store A');
+      const otherStore = getOrCreateStore('Sub Ops Other Store A');
+
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: otherStore.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 3.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Sub Ops Recipe A',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 2, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const cost = getAggregatedCartCost(selectedStore.id);
+
+      expect(cost.matched_count).toBe(0);
+      expect(cost.substituted_count).toBe(1);
+      expect(cost.missing_ingredients).toHaveLength(0);
+      expect(cost.substituted_items[0].line_cost).toBe(6.0); // 2 each -> ceil(2/1)=2 packages * $3
+      expect(cost.substituted_items[0].is_blended).toBe(false);
+      expect(cost.substituted_items[0].source_stores).toHaveLength(1);
+      expect(cost.substituted_items[0].source_stores[0].store_name).toBe('Sub Ops Other Store A');
+      expect(cost.total_cost).toBe(6.0);
+    });
+
+    test('getAggregatedCartCost uses the median cost (odd count), not the cheapest', () => {
+      const unit = getOrCreateUnit('Sub Ops Each Odd', 'count');
+      const ingredient = getOrCreateIngredient('Sub Ops Odd Candidate Item');
+      const selectedStore = getOrCreateStore('Sub Ops Selected Store B');
+      const storeA = getOrCreateStore('Sub Ops Store B1');
+      const storeB = getOrCreateStore('Sub Ops Store B2');
+      const storeC = getOrCreateStore('Sub Ops Store B3');
+
+      createPriceOption({ ingredient_id: ingredient.id, store_id: storeA.id, package_quantity: 1, package_unit_id: unit.id, price: 5.0, is_preferred: true });
+      createPriceOption({ ingredient_id: ingredient.id, store_id: storeB.id, package_quantity: 1, package_unit_id: unit.id, price: 1.0, is_preferred: true });
+      createPriceOption({ ingredient_id: ingredient.id, store_id: storeC.id, package_quantity: 1, package_unit_id: unit.id, price: 3.0, is_preferred: true });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Sub Ops Recipe B',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const cost = getAggregatedCartCost(selectedStore.id);
+
+      // Sorted costs: [1, 3, 5] -> median is 3 (storeC), not the cheapest (1) or an average of all three.
+      expect(cost.substituted_items[0].line_cost).toBe(3.0);
+      expect(cost.substituted_items[0].is_blended).toBe(false);
+      expect(cost.substituted_items[0].source_stores[0].store_name).toBe('Sub Ops Store B3');
+    });
+
+    test('getAggregatedCartCost blends (averages) the two middle costs for an even number of candidates', () => {
+      const unit = getOrCreateUnit('Sub Ops Each Blend', 'count');
+      const ingredient = getOrCreateIngredient('Sub Ops Blend Candidate Item');
+      const selectedStore = getOrCreateStore('Sub Ops Selected Store C');
+      const storeA = getOrCreateStore('Sub Ops Store C1');
+      const storeB = getOrCreateStore('Sub Ops Store C2');
+
+      createPriceOption({ ingredient_id: ingredient.id, store_id: storeA.id, package_quantity: 1, package_unit_id: unit.id, price: 2.0, is_preferred: true });
+      createPriceOption({ ingredient_id: ingredient.id, store_id: storeB.id, package_quantity: 1, package_unit_id: unit.id, price: 4.0, is_preferred: true });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Sub Ops Recipe C',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const cost = getAggregatedCartCost(selectedStore.id);
+
+      expect(cost.substituted_items[0].is_blended).toBe(true);
+      expect(cost.substituted_items[0].line_cost).toBe(3.0); // (2 + 4) / 2
+      expect(cost.substituted_items[0].source_stores).toHaveLength(2);
+      const sourceNames = cost.substituted_items[0].source_stores.map(s => s.store_name);
+      expect(sourceNames).toEqual(expect.arrayContaining(['Sub Ops Store C1', 'Sub Ops Store C2']));
+    });
+
+    test('getRecipeCost never substitutes -- a missing price stays missing even if another store has one', () => {
+      const unit = getOrCreateUnit('Sub Ops Each Scope', 'count');
+      const ingredient = getOrCreateIngredient('Sub Ops Scope Item');
+      const selectedStore = getOrCreateStore('Sub Ops Selected Store D');
+      const otherStore = getOrCreateStore('Sub Ops Other Store D');
+
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: otherStore.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 3.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Sub Ops Recipe D',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+
+      const cost = getRecipeCost(recipeId, selectedStore.id);
+
+      expect(cost.total_cost).toBe(0);
+      expect(cost.missing_ingredients).toHaveLength(1);
+      expect(cost.missing_ingredients[0].name).toBe('Sub Ops Scope Item');
+      expect(cost.substituted_items).toHaveLength(0);
+    });
+
+    test('falls back to missing when no other store has a usable (convertible) price either', () => {
+      const countUnit = getOrCreateUnit('Sub Ops Count Fallback', 'count');
+      const massUnit = getOrCreateUnit('Sub Ops Mass Fallback', 'mass');
+      const ingredient = getOrCreateIngredient('Sub Ops Unconvertible Item');
+      const selectedStore = getOrCreateStore('Sub Ops Selected Store E');
+      const otherStore = getOrCreateStore('Sub Ops Other Store E');
+
+      // Priced by mass at the other store, but the recipe needs it by count, with no
+      // ingredient-specific conversion defined -- unusable as a substitute too.
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: otherStore.id,
+        package_quantity: 1, package_unit_id: massUnit.id, price: 5.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Sub Ops Recipe E',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: countUnit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const cost = getAggregatedCartCost(selectedStore.id);
+
+      expect(cost.total_cost).toBe(0);
+      expect(cost.substituted_items).toHaveLength(0);
+      expect(cost.missing_ingredients).toHaveLength(1);
+      expect(cost.missing_ingredients[0].name).toBe('Sub Ops Unconvertible Item');
+    });
+  });
+
   describe('Settings', () => {
     test('setSelectedStoreId(null) clears the selected store', () => {
       setSelectedStoreId(null);

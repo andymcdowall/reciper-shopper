@@ -904,6 +904,19 @@ button:disabled:hover {
   white-space: nowrap;
 }
 
+.cost-line-item.cost-substituted {
+  font-style: italic;
+}
+
+.substituted-badge {
+  background: #2980b9;
+  color: white;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
 /* Ingredient Prices */
 .ingredient-prices {
   margin-top: 0.75rem;

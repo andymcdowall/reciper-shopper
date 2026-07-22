@@ -290,6 +290,14 @@ const getPreferredPrice = db.prepare(`
   WHERE p.ingredient_id = ? AND p.store_id = ? AND p.is_preferred = 1
 `);
 
+const getPreferredPricesForIngredient = db.prepare(`
+  SELECT p.*, s.name as store_name, u.name as package_unit_name
+  FROM prices p
+  INNER JOIN stores s ON p.store_id = s.id
+  INNER JOIN units u ON p.package_unit_id = u.id
+  WHERE p.ingredient_id = ? AND p.is_preferred = 1
+`);
+
 const countPricesForPair = db.prepare(
   'SELECT COUNT(*) as c FROM prices WHERE ingredient_id = ? AND store_id = ?'
 );
@@ -625,62 +633,131 @@ function isPriceStale(price, thresholdDays) {
   return ageMs / 86400000 > threshold;
 }
 
+// Finds a cross-store substitute for an ingredient the selected store has no usable price for.
+// Considers every OTHER store's preferred price, computes what each would cost for the needed
+// quantity, and uses the MEDIAN of those costs (averaging the two middle values when there's an
+// even number of candidates) as a deliberately conservative "typical" estimate, rather than
+// always picking the cheapest or the most recently updated option. Returns null if no other
+// store has a usable price either.
+function findSubstitutePrice(item, storeId, thresholdDays) {
+  const candidates = getPreferredPricesForIngredient.all(item.ingredient_id)
+    .filter(p => p.store_id !== storeId);
+
+  const computed = [];
+  for (const candidate of candidates) {
+    try {
+      const neededInPackageUnit = convertUnits(item.unit_id, candidate.package_unit_id, item.quantity, item.ingredient_id);
+      const packagesNeeded = Math.ceil(neededInPackageUnit / candidate.package_quantity);
+      computed.push({
+        candidate,
+        packages_needed: packagesNeeded,
+        line_cost: packagesNeeded * candidate.price
+      });
+    } catch (error) {
+      // Unit mismatch at this candidate store too -- not a usable substitute.
+    }
+  }
+
+  if (computed.length === 0) return null;
+
+  computed.sort((a, b) => a.line_cost - b.line_cost);
+  const mid = Math.floor(computed.length / 2);
+  const isBlended = computed.length % 2 === 0;
+  const contributors = isBlended ? [computed[mid - 1], computed[mid]] : [computed[mid]];
+  const medianCost = isBlended
+    ? (computed[mid - 1].line_cost + computed[mid].line_cost) / 2
+    : computed[mid].line_cost;
+
+  return {
+    ingredient_id: item.ingredient_id,
+    name: item.name,
+    quantity: item.quantity,
+    unit_id: item.unit_id,
+    line_cost: medianCost,
+    is_blended: isBlended,
+    source_stores: contributors.map(c => ({
+      store_id: c.candidate.store_id,
+      store_name: c.candidate.store_name,
+      package_quantity: c.candidate.package_quantity,
+      package_unit_name: c.candidate.package_unit_name,
+      unit_price: c.candidate.price,
+      packages_needed: c.packages_needed,
+      line_cost: c.line_cost
+    })),
+    is_stale: contributors.some(c => isPriceStale(c.candidate, thresholdDays))
+  };
+}
+
 // items: [{ ingredient_id, name, unit_id, quantity }]. Rounds up to whole packages (ceil) per
 // ingredient. Ingredients with no preferred price at storeId, or whose unit can't convert to the
 // price's package unit, are excluded from total_cost and reported in missing_ingredients —
-// never treated as $0.
-function computeCostForItems(items, storeId) {
+// never treated as $0. When allowSubstitution is true, a missing ingredient falls back to a
+// cross-store substitute (see findSubstitutePrice) before being treated as truly missing;
+// substituted items are tracked separately from matched_count but still count toward total_cost.
+function computeCostForItems(items, storeId, options = {}) {
+  const { allowSubstitution = false } = options;
   const thresholdDays = getPriceStalenessDays();
   const lineItems = [];
+  const substitutedItems = [];
   const missingIngredients = [];
   let totalCost = 0;
 
   for (const item of items) {
     const priceOption = getPreferredPrice.get(item.ingredient_id, storeId);
-    if (!priceOption) {
-      missingIngredients.push({ ingredient_id: item.ingredient_id, name: item.name });
-      continue;
+
+    if (priceOption) {
+      try {
+        const neededInPackageUnit = convertUnits(item.unit_id, priceOption.package_unit_id, item.quantity, item.ingredient_id);
+        const packagesNeeded = Math.ceil(neededInPackageUnit / priceOption.package_quantity);
+        const lineCost = packagesNeeded * priceOption.price;
+        totalCost += lineCost;
+
+        lineItems.push({
+          ingredient_id: item.ingredient_id,
+          name: item.name,
+          quantity: item.quantity,
+          unit_id: item.unit_id,
+          package_quantity: priceOption.package_quantity,
+          package_unit_id: priceOption.package_unit_id,
+          package_unit_name: priceOption.package_unit_name,
+          unit_price: priceOption.price,
+          packages_needed: packagesNeeded,
+          line_cost: lineCost,
+          price_updated_at: priceOption.updated_at,
+          is_stale: isPriceStale(priceOption, thresholdDays)
+        });
+        continue;
+      } catch (error) {
+        // Unit mismatch at the selected store -- fall through to substitution/missing below.
+      }
     }
 
-    let neededInPackageUnit;
-    try {
-      neededInPackageUnit = convertUnits(item.unit_id, priceOption.package_unit_id, item.quantity, item.ingredient_id);
-    } catch (error) {
-      missingIngredients.push({ ingredient_id: item.ingredient_id, name: item.name });
-      continue;
+    if (allowSubstitution) {
+      const substitute = findSubstitutePrice(item, storeId, thresholdDays);
+      if (substitute) {
+        totalCost += substitute.line_cost;
+        substitutedItems.push(substitute);
+        continue;
+      }
     }
 
-    const packagesNeeded = Math.ceil(neededInPackageUnit / priceOption.package_quantity);
-    const lineCost = packagesNeeded * priceOption.price;
-    totalCost += lineCost;
-
-    lineItems.push({
-      ingredient_id: item.ingredient_id,
-      name: item.name,
-      quantity: item.quantity,
-      unit_id: item.unit_id,
-      package_quantity: priceOption.package_quantity,
-      package_unit_id: priceOption.package_unit_id,
-      package_unit_name: priceOption.package_unit_name,
-      unit_price: priceOption.price,
-      packages_needed: packagesNeeded,
-      line_cost: lineCost,
-      price_updated_at: priceOption.updated_at,
-      is_stale: isPriceStale(priceOption, thresholdDays)
-    });
+    missingIngredients.push({ ingredient_id: item.ingredient_id, name: item.name });
   }
 
   return {
     store_id: storeId,
     total_cost: totalCost,
     matched_count: lineItems.length,
+    substituted_count: substitutedItems.length,
     total_count: items.length,
     items: lineItems,
+    substituted_items: substitutedItems,
     missing_ingredients: missingIngredients
   };
 }
 
-// Single-recipe cost: NOT aggregated with the cart/other recipes.
+// Single-recipe cost: NOT aggregated with the cart/other recipes, and no cross-store
+// substitution -- that's scoped to the shopping list only.
 function getRecipeCost(recipeId, storeId) {
   const recipe = getRecipeWithIngredients(recipeId);
   if (!recipe) return null;
@@ -697,8 +774,9 @@ function getRecipeCost(recipeId, storeId) {
 
 // Cart/grocery-list cost: quantities are aggregated across all cart recipes BEFORE rounding up
 // to whole packages, so multiple recipes sharing an ingredient don't each buy a full package.
+// Missing ingredients get a cross-store substitute price patched in when one is available.
 function getAggregatedCartCost(storeId) {
-  return computeCostForItems(aggregateCartIngredients(), storeId);
+  return computeCostForItems(aggregateCartIngredients(), storeId, { allowSubstitution: true });
 }
 
 function getAllRecipesWithIngredients() {

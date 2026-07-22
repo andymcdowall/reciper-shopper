@@ -326,9 +326,16 @@ describe('Cost Summary Rendering Logic', () => {
   function renderCostSummary(cost) {
     if (!cost) return '';
 
+    const substitutedItems = cost.substituted_items || [];
+    const substitutedCount = cost.substituted_count || 0;
+
     const missingHtml = cost.missing_ingredients.length
       ? `<p class="cost-warning">Missing at this store: ${cost.missing_ingredients.map(m => m.name).join(', ')}</p>`
       : '';
+
+    const matchLabel = substitutedCount
+      ? `${cost.matched_count} of ${cost.total_count} priced at this store, ${substitutedCount} patched in from elsewhere`
+      : `${cost.matched_count} of ${cost.total_count} items`;
 
     const lines = cost.items.map(item => `
       <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
@@ -337,11 +344,24 @@ describe('Cost Summary Rendering Logic', () => {
       </div>
     `).join('');
 
+    const substitutedLines = substitutedItems.map(item => {
+      const sourceLabel = item.is_blended
+        ? `blended from ${item.source_stores.map(s => s.store_name).join(' & ')}`
+        : `from ${item.source_stores[0].store_name}`;
+      return `
+        <div class="cost-line-item cost-substituted ${item.is_stale ? 'price-stale' : ''}">
+          <span>${item.name}: $${item.line_cost.toFixed(2)}</span>
+          <span class="substituted-badge">${sourceLabel}</span>
+          ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
+        </div>
+      `;
+    }).join('');
+
     return `
       <div class="cost-summary">
-        <strong>$${cost.total_cost.toFixed(2)} for ${cost.matched_count} of ${cost.total_count} items</strong>
+        <strong>$${cost.total_cost.toFixed(2)} for ${matchLabel}</strong>
         ${missingHtml}
-        <div class="cost-line-items">${lines}</div>
+        <div class="cost-line-items">${lines}${substitutedLines}</div>
       </div>
     `;
   }
@@ -357,6 +377,49 @@ describe('Cost Summary Rendering Logic', () => {
 
     expect(html).toContain('$34.20 for 11 of 13 items');
     expect(html).toContain('Missing at this store: tahini, saffron');
+  });
+
+  test('should show a substituted-item badge naming the source store', () => {
+    const html = renderCostSummary({
+      total_cost: 6.0,
+      matched_count: 0,
+      substituted_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: [],
+      substituted_items: [{
+        name: 'saffron',
+        line_cost: 6.0,
+        is_blended: false,
+        is_stale: false,
+        source_stores: [{ store_name: 'Trader Joe\'s' }]
+      }]
+    });
+
+    expect(html).toContain('$6.00 for 0 of 1 priced at this store, 1 patched in from elsewhere');
+    expect(html).toContain('substituted-badge');
+    expect(html).toContain('from Trader Joe\'s');
+    expect(html).toContain('cost-substituted');
+  });
+
+  test('should label a blended substitute with both contributing stores', () => {
+    const html = renderCostSummary({
+      total_cost: 3.0,
+      matched_count: 0,
+      substituted_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: [],
+      substituted_items: [{
+        name: 'saffron',
+        line_cost: 3.0,
+        is_blended: true,
+        is_stale: false,
+        source_stores: [{ store_name: 'Store A' }, { store_name: 'Store B' }]
+      }]
+    });
+
+    expect(html).toContain('blended from Store A & Store B');
   });
 
   test('should not render a warning when nothing is missing', () => {
