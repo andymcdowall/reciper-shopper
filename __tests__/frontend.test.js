@@ -619,47 +619,46 @@ describe('Manual List Item Rendering Logic', () => {
   });
 });
 
-describe('Ingredient Exclusion Rendering Logic', () => {
-  // Mirrors the exclude-toggle slice of renderIngredients() in public/app.js
-  function renderExcludeToggle(ing) {
+describe('Shopping List "Don\'t Need to Buy" Rendering Logic', () => {
+  // Mirrors the relevant slices of renderShoppingList() in public/app.js
+  function renderListItemActions(item) {
+    return `<button type="button" class="btn-secondary btn-small dont-need-btn" onclick="excludeFromShoppingList(${item.ingredient_id})">Don't need to buy</button>`;
+  }
+
+  function renderExcludedSection(excludedIngredients) {
+    if (excludedIngredients.length === 0) return '';
     return `
-      <label class="ingredient-exclude-toggle">
-        <input type="checkbox" id="exclude-${ing.id}" ${ing.exclude_from_list ? 'checked' : ''}
-          onchange="toggleIngredientExclusion(${ing.id}, this.checked)">
-        Exclude from shopping list &amp; pricing
-      </label>
+      <div class="excluded-list-section">
+        <div class="excluded-list-title">Not buying this trip</div>
+        <ul class="excluded-list">
+          ${excludedIngredients.map(ing => `
+            <li>
+              <span>${ing.name}</span>
+              <button type="button" class="btn-secondary btn-small" onclick="includeInShoppingList(${ing.id})">Buy after all</button>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
     `;
   }
 
-  // Mirrors the ingredient <li> slice of viewRecipeDetails() in public/app.js
-  function renderRecipeDetailIngredient(ing) {
-    return `
-      <li>${ing.quantity} ${ing.unit} ${ing.name}
-        ${ing.exclude_from_list ? '<span class="excluded-badge">not on shopping list</span>' : ''}
-      </li>
-    `;
-  }
-
-  test('an included ingredient renders an unchecked toggle', () => {
-    const html = renderExcludeToggle({ id: 3, exclude_from_list: 0 });
-    expect(html).not.toContain('exclude-3" checked');
-    expect(html).toContain('toggleIngredientExclusion(3, this.checked)');
+  test('each list item gets a "Don\'t need to buy" button scoped to that ingredient', () => {
+    const html = renderListItemActions({ ingredient_id: 7, name: 'flour' });
+    expect(html).toContain('excludeFromShoppingList(7)');
+    expect(html).toContain("Don't need to buy");
   });
 
-  test('an excluded ingredient renders a checked toggle', () => {
-    const html = renderExcludeToggle({ id: 4, exclude_from_list: 1 });
-    expect(html).toContain('exclude-4" checked');
+  test('excluded ingredients render in a separate section with a way to add them back', () => {
+    const html = renderExcludedSection([{ id: 9, name: 'saffron' }]);
+    expect(html).toContain('excluded-list-section');
+    expect(html).toContain('saffron');
+    expect(html).toContain('includeInShoppingList(9)');
+    expect(html).toContain('Buy after all');
   });
 
-  test('an excluded ingredient shows a badge in the recipe detail ingredient list', () => {
-    const html = renderRecipeDetailIngredient({ quantity: 1, unit: 'pinch', name: 'salt', exclude_from_list: 1 });
-    expect(html).toContain('excluded-badge');
-    expect(html).toContain('not on shopping list');
-  });
-
-  test('a normal ingredient shows no badge in the recipe detail ingredient list', () => {
-    const html = renderRecipeDetailIngredient({ quantity: 2, unit: 'cups', name: 'flour', exclude_from_list: 0 });
-    expect(html).not.toContain('excluded-badge');
+  test('no excluded section renders when nothing is excluded', () => {
+    const html = renderExcludedSection([]);
+    expect(html).toBe('');
   });
 });
 

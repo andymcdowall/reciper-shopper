@@ -125,7 +125,7 @@ const getAllRecipes = db.prepare('SELECT * FROM recipes ORDER BY created_at DESC
 const getRecipeById = db.prepare('SELECT * FROM recipes WHERE id = ?');
 
 const getIngredientsByRecipeId = db.prepare(`
-  SELECT i.id, i.name, i.exclude_from_list, ri.quantity, ri.unit_id, u.name as unit
+  SELECT i.id, i.name, ri.quantity, ri.unit_id, u.name as unit
   FROM ingredients i
   INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
   INNER JOIN units u ON ri.unit_id = u.id
@@ -876,21 +876,20 @@ function computeCostForItems(items, storeId, options = {}) {
 
 // Single-recipe cost: NOT aggregated with the cart/other recipes, no cross-store substitution
 // (that's scoped to the shopping list only), and prorated rather than rounded to whole packages --
-// see computeCostForItems for why. Ingredients flagged exclude_from_list (e.g. salt, water) are
-// left out entirely -- not priced, not counted toward matched/total counts, never "missing".
+// see computeCostForItems for why. Unlike the shopping list, this does NOT honor exclude_from_list
+// -- that flag means "don't buy this on my shopping trip," not "this ingredient has no cost," so a
+// recipe's own price breakdown still includes it.
 function getRecipeCost(recipeId, storeId) {
   const recipe = getRecipeWithIngredients(recipeId);
   if (!recipe) return null;
 
-  const items = recipe.ingredients
-    .filter(ing => !ing.exclude_from_list)
-    .map(ing => ({
-      ingredient_id: ing.id,
-      name: ing.name,
-      unit_id: ing.unit_id,
-      unit_name: ing.unit,
-      quantity: ing.quantity
-    }));
+  const items = recipe.ingredients.map(ing => ({
+    ingredient_id: ing.id,
+    name: ing.name,
+    unit_id: ing.unit_id,
+    unit_name: ing.unit,
+    quantity: ing.quantity
+  }));
 
   return computeCostForItems(items, storeId, { roundUp: false });
 }

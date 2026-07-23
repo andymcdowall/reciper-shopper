@@ -348,14 +348,18 @@ function renderCart() {
 function renderShoppingList(items, cost) {
   const container = document.getElementById('shopping-list-items');
 
-  if (items.length === 0) {
+  const excludedIngredients = ingredients.filter(i => i.exclude_from_list);
+
+  if (items.length === 0 && excludedIngredients.length === 0) {
     container.innerHTML = '<p class="empty-state">No items in shopping list. Add recipes to your cart, or add an ingredient directly above!</p>';
     return;
   }
 
-  const costHtml = selectedStoreId
-    ? renderCostSummary(cost)
-    : '<p class="empty-state">Select a store above to see cost.</p>';
+  const costHtml = items.length === 0
+    ? ''
+    : selectedStoreId
+      ? renderCostSummary(cost)
+      : '<p class="empty-state">Select a store above to see cost.</p>';
 
   const costByIngredient = {};
   if (cost && cost.items) {
@@ -364,8 +368,9 @@ function renderShoppingList(items, cost) {
     }
   }
 
-  container.innerHTML = `
-    ${costHtml}
+  const listHtml = items.length === 0
+    ? '<p class="empty-state">Everything on this list is marked as not needed to buy.</p>'
+    : `
     <ul class="shopping-list">
       ${items.map(item => {
         const priced = costByIngredient[item.ingredient_id];
@@ -379,6 +384,7 @@ function renderShoppingList(items, cost) {
             ${item.quantity} ${item.unit} ${item.name}
           </label>
           ${buyHtml}
+          <button type="button" class="btn-secondary btn-small dont-need-btn" onclick="excludeFromShoppingList(${item.ingredient_id})">Don't need to buy</button>
           ${item.has_manual ? `
             <span class="manual-badge">added directly</span>
             <span class="manual-entries">
@@ -395,6 +401,36 @@ function renderShoppingList(items, cost) {
       }).join('')}
     </ul>
   `;
+
+  const excludedHtml = excludedIngredients.length === 0 ? '' : `
+    <div class="excluded-list-section">
+      <div class="excluded-list-title">Not buying this trip</div>
+      <ul class="excluded-list">
+        ${excludedIngredients.map(ing => `
+          <li>
+            <span>${ing.name}</span>
+            <button type="button" class="btn-secondary btn-small" onclick="includeInShoppingList(${ing.id})">Buy after all</button>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+  `;
+
+  container.innerHTML = `${costHtml}${listHtml}${excludedHtml}`;
+}
+
+// Marks an ingredient as "don't need to buy" -- scoped to the shopping list only, this ingredient
+// is still priced normally on its recipes' own cost views.
+async function excludeFromShoppingList(ingredientId) {
+  await updateIngredientExclusionAPI(ingredientId, true);
+  await fetchIngredients();
+  await fetchShoppingList();
+}
+
+async function includeInShoppingList(ingredientId) {
+  await updateIngredientExclusionAPI(ingredientId, false);
+  await fetchIngredients();
+  await fetchShoppingList();
 }
 
 // Renders a cost object returned by /api/recipes/:id/cost or /api/shopping-list/cost
@@ -489,13 +525,6 @@ async function renderIngredients() {
           ${units.map(u => `<option value="${u.id}" ${u.id === ing.preferred_unit_id ? 'selected' : ''}>${u.name} (${u.category})</option>`).join('')}
         </select>
       </div>
-
-      <!-- Shopping List Exclusion -->
-      <label class="ingredient-exclude-toggle">
-        <input type="checkbox" id="exclude-${ing.id}" ${ing.exclude_from_list ? 'checked' : ''}
-          onchange="toggleIngredientExclusion(${ing.id}, this.checked)">
-        Exclude from shopping list &amp; pricing
-      </label>
 
       <!-- Conversions -->
       <div class="ingredient-conversions" id="conversions-${ing.id}">
@@ -714,11 +743,7 @@ async function viewRecipeDetails(id) {
   document.getElementById('recipe-detail-meta').innerHTML =
     `<span>Servings: ${recipe.servings || 'N/A'}</span><span>Prep: ${recipe.prep_time || 'N/A'} min</span>`;
   document.getElementById('recipe-detail-ingredients').innerHTML =
-    '<ul>' + recipe.ingredients.map(ing => `
-      <li>${ing.quantity} ${ing.unit} ${ing.name}
-        ${ing.exclude_from_list ? '<span class="excluded-badge">not on shopping list</span>' : ''}
-      </li>
-    `).join('') + '</ul>';
+    '<ul>' + recipe.ingredients.map(ing => `<li>${ing.quantity} ${ing.unit} ${ing.name}</li>`).join('') + '</ul>';
   document.getElementById('recipe-detail-instructions').textContent = recipe.instructions || 'None';
 
   const costEl = document.getElementById('recipe-detail-cost');
@@ -915,11 +940,6 @@ async function deleteIngredient(id) {
 async function updatePreferredUnit(ingredientId, unitId) {
   const preferred_unit_id = unitId ? parseInt(unitId) : null;
   await updateIngredientPreferredUnitAPI(ingredientId, preferred_unit_id);
-  await fetchIngredients();
-}
-
-async function toggleIngredientExclusion(ingredientId, exclude) {
-  await updateIngredientExclusionAPI(ingredientId, exclude);
   await fetchIngredients();
 }
 

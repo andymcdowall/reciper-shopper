@@ -346,6 +346,37 @@ button {
   white-space: nowrap;
 }
 
+.dont-need-btn {
+  margin-left: auto;
+}
+
+.excluded-list-section {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.excluded-list-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.excluded-list {
+  list-style: none;
+  padding: 0;
+}
+
+.excluded-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  color: #888;
+}
+
 .manual-entries {
   display: flex;
   flex-wrap: wrap;
@@ -751,26 +782,6 @@ button:disabled:hover {
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 0.9rem;
-}
-
-.ingredient-exclude-toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: #666;
-  cursor: pointer;
-}
-
-.excluded-badge {
-  background: #ccc;
-  color: #444;
-  padding: 0.1rem 0.4rem;
-  border-radius: 10px;
-  font-size: 0.7rem;
-  margin-left: 0.4rem;
-  white-space: nowrap;
 }
 
 /* Modal Styles */

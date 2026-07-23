@@ -1007,25 +1007,21 @@ describe('API Integration Tests', () => {
       expect(cost.items.find(i => i.name === 'Exclusion Ops Excluded Item')).toBeUndefined();
     });
 
-    test('an excluded ingredient is left out of a single recipe cost, never counted as missing', () => {
+    test('an excluded ingredient is still priced normally on its own recipe -- exclusion is shopping-list-only', () => {
       const unit = getOrCreateUnit('Exclusion Ops Splash', 'count');
       const excludedIngredient = getOrCreateIngredient('Exclusion Ops Recipe Excluded');
-      const pricedIngredient = getOrCreateIngredient('Exclusion Ops Recipe Priced');
       const store = getOrCreateStore('Exclusion Ops Store B');
       updateIngredientExclusion.run({ id: excludedIngredient.id, exclude_from_list: 1 });
 
       createPriceOption({
-        ingredient_id: pricedIngredient.id, store_id: store.id,
+        ingredient_id: excludedIngredient.id, store_id: store.id,
         package_quantity: 1, package_unit_id: unit.id, price: 2.5, is_preferred: true
       });
 
       const recipeId = createRecipeWithIngredients({
         name: 'Exclusion Ops Recipe C',
         servings: 1, prep_time: 5, instructions: '',
-        ingredients: [
-          { ingredient_id: excludedIngredient.id, quantity: 1, unit_id: unit.id },
-          { ingredient_id: pricedIngredient.id, quantity: 1, unit_id: unit.id }
-        ]
+        ingredients: [{ ingredient_id: excludedIngredient.id, quantity: 1, unit_id: unit.id }]
       });
 
       const cost = getRecipeCost(recipeId, store.id);
