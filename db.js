@@ -778,14 +778,19 @@ function findSubstitutePrice(item, storeId, thresholdDays) {
   };
 }
 
-// items: [{ ingredient_id, name, unit_id, quantity }]. Rounds up to whole packages (ceil) per
-// ingredient. Ingredients with no preferred price at storeId, or whose unit can't convert to the
-// price's package unit, are excluded from total_cost and reported in missing_ingredients —
-// never treated as $0. When allowSubstitution is true, a missing ingredient falls back to a
-// cross-store substitute (see findSubstitutePrice) before being treated as truly missing;
-// substituted items are tracked separately from matched_count but still count toward total_cost.
+// items: [{ ingredient_id, name, unit_id, unit_name, quantity }]. By default rounds up to whole
+// packages (ceil) per ingredient -- that's how purchasing actually works, you can't buy 0.2 of a
+// bottle. When roundUp is false, cost is prorated instead: line_cost is the ingredient's exact
+// fractional share of the package price (quantity_needed / package_quantity), with no rounding --
+// used for single-recipe cost, where a recipe should be charged only its fair share of a package
+// that's likely also used elsewhere, not a whole package for 2 tbsp out of a 48-tbsp bottle.
+// Ingredients with no preferred price at storeId, or whose unit can't convert to the price's
+// package unit, are excluded from total_cost and reported in missing_ingredients — never treated
+// as $0. When allowSubstitution is true, a missing ingredient falls back to a cross-store
+// substitute (see findSubstitutePrice) before being treated as truly missing; substituted items
+// are tracked separately from matched_count but still count toward total_cost.
 function computeCostForItems(items, storeId, options = {}) {
-  const { allowSubstitution = false } = options;
+  const { allowSubstitution = false, roundUp = true } = options;
   const thresholdDays = getPriceStalenessDays();
   const lineItems = [];
   const substitutedItems = [];
@@ -798,24 +803,34 @@ function computeCostForItems(items, storeId, options = {}) {
     if (priceOption) {
       try {
         const neededInPackageUnit = convertUnits(item.unit_id, priceOption.package_unit_id, item.quantity, item.ingredient_id);
-        const packagesNeeded = Math.ceil(neededInPackageUnit / priceOption.package_quantity);
-        const lineCost = packagesNeeded * priceOption.price;
-        totalCost += lineCost;
 
-        lineItems.push({
+        const lineItem = {
           ingredient_id: item.ingredient_id,
           name: item.name,
           quantity: item.quantity,
           unit_id: item.unit_id,
+          unit_name: item.unit_name,
           package_quantity: priceOption.package_quantity,
           package_unit_id: priceOption.package_unit_id,
           package_unit_name: priceOption.package_unit_name,
           unit_price: priceOption.price,
-          packages_needed: packagesNeeded,
-          line_cost: lineCost,
           price_updated_at: priceOption.updated_at,
-          is_stale: isPriceStale(priceOption, thresholdDays)
-        });
+          is_stale: isPriceStale(priceOption, thresholdDays),
+          is_prorated: !roundUp
+        };
+
+        if (roundUp) {
+          const packagesNeeded = Math.ceil(neededInPackageUnit / priceOption.package_quantity);
+          lineItem.packages_needed = packagesNeeded;
+          lineItem.line_cost = packagesNeeded * priceOption.price;
+        } else {
+          const fractionUsed = neededInPackageUnit / priceOption.package_quantity;
+          lineItem.fraction_used = fractionUsed;
+          lineItem.line_cost = fractionUsed * priceOption.price;
+        }
+
+        totalCost += lineItem.line_cost;
+        lineItems.push(lineItem);
         continue;
       } catch (error) {
         // Unit mismatch at the selected store -- fall through to substitution/missing below.
@@ -846,8 +861,9 @@ function computeCostForItems(items, storeId, options = {}) {
   };
 }
 
-// Single-recipe cost: NOT aggregated with the cart/other recipes, and no cross-store
-// substitution -- that's scoped to the shopping list only.
+// Single-recipe cost: NOT aggregated with the cart/other recipes, no cross-store substitution
+// (that's scoped to the shopping list only), and prorated rather than rounded to whole packages --
+// see computeCostForItems for why.
 function getRecipeCost(recipeId, storeId) {
   const recipe = getRecipeWithIngredients(recipeId);
   if (!recipe) return null;
@@ -856,10 +872,11 @@ function getRecipeCost(recipeId, storeId) {
     ingredient_id: ing.id,
     name: ing.name,
     unit_id: ing.unit_id,
+    unit_name: ing.unit,
     quantity: ing.quantity
   }));
 
-  return computeCostForItems(items, storeId);
+  return computeCostForItems(items, storeId, { roundUp: false });
 }
 
 // Cart/grocery-list cost: quantities are aggregated across all cart recipes BEFORE rounding up

@@ -348,15 +348,28 @@ function renderShoppingList(items, cost) {
     ? renderCostSummary(cost)
     : '<p class="empty-state">Select a store above to see cost.</p>';
 
+  const costByIngredient = {};
+  if (cost && cost.items) {
+    for (const lineItem of cost.items) {
+      costByIngredient[lineItem.ingredient_id] = lineItem;
+    }
+  }
+
   container.innerHTML = `
     ${costHtml}
     <ul class="shopping-list">
-      ${items.map(item => `
+      ${items.map(item => {
+        const priced = costByIngredient[item.ingredient_id];
+        const buyHtml = priced
+          ? `<span class="buy-increment">buy ${priced.packages_needed} &times; ${priced.package_quantity} ${priced.package_unit_name}</span>`
+          : '';
+        return `
         <li class="${item.has_manual ? 'manually-added' : ''}">
           <input type="checkbox" id="item-${item.name}">
           <label for="item-${item.name}">
             ${item.quantity} ${item.unit} ${item.name}
           </label>
+          ${buyHtml}
           ${item.has_manual ? `
             <span class="manual-badge">added directly</span>
             <span class="manual-entries">
@@ -369,7 +382,8 @@ function renderShoppingList(items, cost) {
             </span>
           ` : ''}
         </li>
-      `).join('')}
+      `;
+      }).join('')}
     </ul>
   `;
 }
@@ -389,12 +403,17 @@ function renderCostSummary(cost) {
     ? `${cost.matched_count} of ${cost.total_count} priced at this store, ${substitutedCount} patched in from elsewhere`
     : `${cost.matched_count} of ${cost.total_count} items`;
 
-  const lines = cost.items.map(item => `
+  const lines = cost.items.map(item => {
+    const desc = item.is_prorated
+      ? `${item.name}: ${item.quantity} ${item.unit_name || ''} used (of ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)}) = $${item.line_cost.toFixed(2)}`
+      : `${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}`;
+    return `
     <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
-      <span>${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}</span>
+      <span>${desc}</span>
       ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   const substitutedLines = substitutedItems.map(item => {
     const sourceLabel = item.is_blended

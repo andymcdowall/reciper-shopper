@@ -339,6 +339,13 @@ button {
   white-space: nowrap;
 }
 
+.buy-increment {
+  color: #566573;
+  font-size: 0.8rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+
 .manual-entries {
   display: flex;
   flex-wrap: wrap;

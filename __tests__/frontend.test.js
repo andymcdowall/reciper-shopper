@@ -392,12 +392,17 @@ describe('Cost Summary Rendering Logic', () => {
       ? `${cost.matched_count} of ${cost.total_count} priced at this store, ${substitutedCount} patched in from elsewhere`
       : `${cost.matched_count} of ${cost.total_count} items`;
 
-    const lines = cost.items.map(item => `
+    const lines = cost.items.map(item => {
+      const desc = item.is_prorated
+        ? `${item.name}: ${item.quantity} ${item.unit_name || ''} used (of ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)}) = $${item.line_cost.toFixed(2)}`
+        : `${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}`;
+      return `
       <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
-        <span>${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}</span>
+        <span>${desc}</span>
         ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     const substitutedLines = substitutedItems.map(item => {
       const sourceLabel = item.is_blended
@@ -531,6 +536,30 @@ describe('Cost Summary Rendering Logic', () => {
     expect(html).not.toContain('price-stale');
     expect(html).not.toContain('stale-badge');
   });
+
+  test('a prorated recipe-cost line shows the fractional share used, not a package count', () => {
+    const html = renderCostSummary({
+      total_cost: 0.21,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        quantity: 2,
+        unit_name: 'tbsp',
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        fraction_used: 0.0417,
+        line_cost: 0.21,
+        is_prorated: true,
+        is_stale: false
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).toContain('olive oil: 2 tbsp used (of 48 tbsp @ $4.99) = $0.21');
+    expect(html).not.toContain('undefined &times;');
+  });
 });
 
 describe('Manual List Item Rendering Logic', () => {
@@ -587,6 +616,34 @@ describe('Manual List Item Rendering Logic', () => {
 
     expect(html).toContain('deleteManualListItemUI(1)');
     expect(html).toContain('deleteManualListItemUI(2)');
+  });
+});
+
+describe('Shopping List Buy-Increment Rendering Logic', () => {
+  // Mirrors the packages-to-buy slice of renderShoppingList() in public/app.js
+  function renderBuyIncrement(item, costByIngredient) {
+    const priced = costByIngredient[item.ingredient_id];
+    return priced
+      ? `<span class="buy-increment">buy ${priced.packages_needed} &times; ${priced.package_quantity} ${priced.package_unit_name}</span>`
+      : '';
+  }
+
+  test('an item priced at the selected store shows the packages-to-buy alongside the raw quantity', () => {
+    const item = { ingredient_id: 1, name: 'flour', quantity: 5, unit: 'cups' };
+    const costByIngredient = { 1: { packages_needed: 2, package_quantity: 5, package_unit_name: '5lb bag' } };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 2 &times; 5 5lb bag');
+  });
+
+  test('an item with no price at the selected store shows no buy-increment', () => {
+    const item = { ingredient_id: 2, name: 'saffron', quantity: 1, unit: 'tsp' };
+    const costByIngredient = {};
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toBe('');
   });
 });
 

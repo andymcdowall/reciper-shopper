@@ -815,12 +815,12 @@ describe('API Integration Tests', () => {
   });
 
   describe('Cost Computation', () => {
-    test('getRecipeCost rounds up to whole packages, not fractional or floor', () => {
+    test('getRecipeCost prorates the fractional share of the package, not a whole-package round-up', () => {
       const unit = getOrCreateUnit('Cost Ops Gram', 'mass');
       const ingredient = getOrCreateIngredient('Cost Ops Flour');
       const store = getOrCreateStore('Cost Ops Store A');
 
-      // Package = 10g, need 21g (2.1x) -> must round up to 3 packages, not 2
+      // Package = 10g @ $1.00, recipe needs 21g -> charged 2.1x the package price, not 3 whole packages
       createPriceOption({
         ingredient_id: ingredient.id, store_id: store.id,
         package_quantity: 10, package_unit_id: unit.id, price: 1.0, is_preferred: true
@@ -834,8 +834,10 @@ describe('API Integration Tests', () => {
 
       const cost = getRecipeCost(recipeId, store.id);
       expect(cost.items).toHaveLength(1);
-      expect(cost.items[0].packages_needed).toBe(3);
-      expect(cost.total_cost).toBe(3);
+      expect(cost.items[0].is_prorated).toBe(true);
+      expect(cost.items[0].fraction_used).toBeCloseTo(2.1, 5);
+      expect(cost.items[0].packages_needed).toBeUndefined();
+      expect(cost.total_cost).toBeCloseTo(2.1, 5);
       expect(cost.missing_ingredients).toHaveLength(0);
     });
 
