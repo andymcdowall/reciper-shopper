@@ -619,6 +619,50 @@ describe('Manual List Item Rendering Logic', () => {
   });
 });
 
+describe('Ingredient Exclusion Rendering Logic', () => {
+  // Mirrors the exclude-toggle slice of renderIngredients() in public/app.js
+  function renderExcludeToggle(ing) {
+    return `
+      <label class="ingredient-exclude-toggle">
+        <input type="checkbox" id="exclude-${ing.id}" ${ing.exclude_from_list ? 'checked' : ''}
+          onchange="toggleIngredientExclusion(${ing.id}, this.checked)">
+        Exclude from shopping list &amp; pricing
+      </label>
+    `;
+  }
+
+  // Mirrors the ingredient <li> slice of viewRecipeDetails() in public/app.js
+  function renderRecipeDetailIngredient(ing) {
+    return `
+      <li>${ing.quantity} ${ing.unit} ${ing.name}
+        ${ing.exclude_from_list ? '<span class="excluded-badge">not on shopping list</span>' : ''}
+      </li>
+    `;
+  }
+
+  test('an included ingredient renders an unchecked toggle', () => {
+    const html = renderExcludeToggle({ id: 3, exclude_from_list: 0 });
+    expect(html).not.toContain('exclude-3" checked');
+    expect(html).toContain('toggleIngredientExclusion(3, this.checked)');
+  });
+
+  test('an excluded ingredient renders a checked toggle', () => {
+    const html = renderExcludeToggle({ id: 4, exclude_from_list: 1 });
+    expect(html).toContain('exclude-4" checked');
+  });
+
+  test('an excluded ingredient shows a badge in the recipe detail ingredient list', () => {
+    const html = renderRecipeDetailIngredient({ quantity: 1, unit: 'pinch', name: 'salt', exclude_from_list: 1 });
+    expect(html).toContain('excluded-badge');
+    expect(html).toContain('not on shopping list');
+  });
+
+  test('a normal ingredient shows no badge in the recipe detail ingredient list', () => {
+    const html = renderRecipeDetailIngredient({ quantity: 2, unit: 'cups', name: 'flour', exclude_from_list: 0 });
+    expect(html).not.toContain('excluded-badge');
+  });
+});
+
 describe('Shopping List Buy-Increment Rendering Logic', () => {
   // Mirrors the packages-to-buy slice of renderShoppingList() in public/app.js
   function renderBuyIncrement(item, costByIngredient) {

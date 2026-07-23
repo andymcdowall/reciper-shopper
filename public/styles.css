@@ -753,6 +753,26 @@ button:disabled:hover {
   font-size: 0.9rem;
 }
 
+.ingredient-exclude-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #666;
+  cursor: pointer;
+}
+
+.excluded-badge {
+  background: #ccc;
+  color: #444;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+}
+
 /* Modal Styles */
 .modal {
   display: none;

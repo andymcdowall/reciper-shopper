@@ -34,6 +34,8 @@ const {
   getAllRecipesWithIngredients,
   deleteAllRecipes,
   getOrCreateIngredient,
+  getIngredientById,
+  updateIngredientExclusion,
   getOrCreateUnit,
   getInUseUnitIds,
   deleteUnitsExcept,
@@ -944,6 +946,104 @@ describe('API Integration Tests', () => {
       const cost = getAggregatedCartCost(store.id);
       expect(cost.items[0].packages_needed).toBe(2);
       expect(cost.total_cost).toBeCloseTo(9.98, 5);
+    });
+  });
+
+  describe('Ingredient Shopping List Exclusion', () => {
+    test('updateIngredientExclusion persists the flag on the ingredient', () => {
+      const ingredient = getOrCreateIngredient('Exclusion Ops Salt');
+      expect(getIngredientById.get(ingredient.id).exclude_from_list).toBe(0);
+
+      updateIngredientExclusion.run({ id: ingredient.id, exclude_from_list: 1 });
+      expect(getIngredientById.get(ingredient.id).exclude_from_list).toBe(1);
+
+      updateIngredientExclusion.run({ id: ingredient.id, exclude_from_list: 0 });
+      expect(getIngredientById.get(ingredient.id).exclude_from_list).toBe(0);
+    });
+
+    test('an excluded ingredient is left off the aggregated shopping list even though a cart recipe needs it', () => {
+      const unit = getOrCreateUnit('Exclusion Ops Pinch', 'count');
+      const ingredient = getOrCreateIngredient('Exclusion Ops Pepper');
+      updateIngredientExclusion.run({ id: ingredient.id, exclude_from_list: 1 });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Exclusion Ops Recipe A',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id }]
+      });
+      addToCart.run(recipeId);
+
+      const list = getAggregatedShoppingList();
+      expect(list.find(i => i.name === 'Exclusion Ops Pepper')).toBeUndefined();
+    });
+
+    test('an excluded ingredient is left out of aggregated cart cost, matched/missing counts included', () => {
+      const unit = getOrCreateUnit('Exclusion Ops Dash', 'count');
+      const excludedIngredient = getOrCreateIngredient('Exclusion Ops Excluded Item');
+      const pricedIngredient = getOrCreateIngredient('Exclusion Ops Priced Item');
+      const store = getOrCreateStore('Exclusion Ops Store A');
+      updateIngredientExclusion.run({ id: excludedIngredient.id, exclude_from_list: 1 });
+
+      createPriceOption({
+        ingredient_id: pricedIngredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 3.0, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Exclusion Ops Recipe B',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [
+          { ingredient_id: excludedIngredient.id, quantity: 1, unit_id: unit.id },
+          { ingredient_id: pricedIngredient.id, quantity: 1, unit_id: unit.id }
+        ]
+      });
+      addToCart.run(recipeId);
+
+      const cost = getAggregatedCartCost(store.id);
+      expect(cost.total_count).toBe(1);
+      expect(cost.matched_count).toBe(1);
+      expect(cost.total_cost).toBe(3.0);
+      expect(cost.missing_ingredients).toHaveLength(0);
+      expect(cost.items.find(i => i.name === 'Exclusion Ops Excluded Item')).toBeUndefined();
+    });
+
+    test('an excluded ingredient is left out of a single recipe cost, never counted as missing', () => {
+      const unit = getOrCreateUnit('Exclusion Ops Splash', 'count');
+      const excludedIngredient = getOrCreateIngredient('Exclusion Ops Recipe Excluded');
+      const pricedIngredient = getOrCreateIngredient('Exclusion Ops Recipe Priced');
+      const store = getOrCreateStore('Exclusion Ops Store B');
+      updateIngredientExclusion.run({ id: excludedIngredient.id, exclude_from_list: 1 });
+
+      createPriceOption({
+        ingredient_id: pricedIngredient.id, store_id: store.id,
+        package_quantity: 1, package_unit_id: unit.id, price: 2.5, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Exclusion Ops Recipe C',
+        servings: 1, prep_time: 5, instructions: '',
+        ingredients: [
+          { ingredient_id: excludedIngredient.id, quantity: 1, unit_id: unit.id },
+          { ingredient_id: pricedIngredient.id, quantity: 1, unit_id: unit.id }
+        ]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.total_count).toBe(1);
+      expect(cost.matched_count).toBe(1);
+      expect(cost.total_cost).toBe(2.5);
+      expect(cost.missing_ingredients).toHaveLength(0);
+    });
+
+    test('an excluded ingredient manually added to the list is also left off the aggregated list', () => {
+      const unit = getOrCreateUnit('Exclusion Ops Sprinkle', 'count');
+      const ingredient = getOrCreateIngredient('Exclusion Ops Manual Excluded');
+      updateIngredientExclusion.run({ id: ingredient.id, exclude_from_list: 1 });
+
+      addManualListItem({ ingredient_id: ingredient.id, quantity: 1, unit_id: unit.id });
+
+      const list = getAggregatedShoppingList();
+      expect(list.find(i => i.name === 'Exclusion Ops Manual Excluded')).toBeUndefined();
     });
   });
 

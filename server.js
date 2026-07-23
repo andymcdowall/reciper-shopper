@@ -25,6 +25,7 @@ const {
   updateIngredient,
   deleteIngredient,
   updateIngredientPreferredUnit,
+  updateIngredientExclusion,
   getAllUnits,
   getUnitById,
   getUnitByName,
@@ -386,6 +387,24 @@ app.put('/api/ingredients/:id/preferred-unit', (req, res) => {
     }
 
     updateIngredientPreferredUnit.run({ id: req.params.id, preferred_unit_id: preferred_unit_id || null });
+    const updated = getIngredientById.get(req.params.id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update whether an ingredient is excluded from the shopping list (and its pricing)
+app.put('/api/ingredients/:id/exclude', (req, res) => {
+  try {
+    const { exclude_from_list } = req.body;
+
+    const existing = getIngredientById.get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Ingredient not found' });
+    }
+
+    updateIngredientExclusion.run({ id: req.params.id, exclude_from_list: exclude_from_list ? 1 : 0 });
     const updated = getIngredientById.get(req.params.id);
     res.json(updated);
   } catch (error) {
@@ -901,6 +920,10 @@ app.post('/api/import', (req, res) => {
             if (newPreferredUnitId) {
               updateIngredientPreferredUnit.run({ id: created.id, preferred_unit_id: newPreferredUnitId });
             }
+          }
+
+          if (ing.exclude_from_list) {
+            updateIngredientExclusion.run({ id: created.id, exclude_from_list: 1 });
           }
         }
       }

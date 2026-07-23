@@ -107,6 +107,12 @@ try {
   // Column already exists
 }
 
+try {
+  db.exec(`ALTER TABLE ingredients ADD COLUMN exclude_from_list INTEGER NOT NULL DEFAULT 0`);
+} catch (e) {
+  // Column already exists
+}
+
 db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_prices_one_preferred
   ON prices(ingredient_id, store_id)
@@ -119,7 +125,7 @@ const getAllRecipes = db.prepare('SELECT * FROM recipes ORDER BY created_at DESC
 const getRecipeById = db.prepare('SELECT * FROM recipes WHERE id = ?');
 
 const getIngredientsByRecipeId = db.prepare(`
-  SELECT i.id, i.name, ri.quantity, ri.unit_id, u.name as unit
+  SELECT i.id, i.name, i.exclude_from_list, ri.quantity, ri.unit_id, u.name as unit
   FROM ingredients i
   INNER JOIN recipe_ingredients ri ON i.id = ri.ingredient_id
   INNER JOIN units u ON ri.unit_id = u.id
@@ -166,6 +172,12 @@ const deleteIngredient = db.prepare('DELETE FROM ingredients WHERE id = ?');
 const updateIngredientPreferredUnit = db.prepare(`
   UPDATE ingredients SET preferred_unit_id = @preferred_unit_id WHERE id = @id
 `);
+
+const updateIngredientExclusion = db.prepare(`
+  UPDATE ingredients SET exclude_from_list = @exclude_from_list WHERE id = @id
+`);
+
+const getExcludedIngredientIds = db.prepare('SELECT id FROM ingredients WHERE exclude_from_list = 1');
 
 // Unit queries
 const getAllUnits = db.prepare('SELECT * FROM units ORDER BY category, name ASC');
@@ -529,9 +541,10 @@ function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
 // shared aggregation step used both for the display shopping list and for cart cost math, which
 // need to aggregate quantities BEFORE rounding up to whole packages (see getAggregatedCartCost).
 function aggregateCartIngredients() {
+  const excludedIds = new Set(getExcludedIngredientIds.all().map(r => r.id));
   const recipeItems = getShoppingList.all().map(item => ({ ...item, is_manual: false, manual_item_id: null }));
   const manualItems = getManualListItems.all().map(item => ({ ...item, is_manual: true }));
-  const items = [...recipeItems, ...manualItems];
+  const items = [...recipeItems, ...manualItems].filter(item => !excludedIds.has(item.ingredient_id));
   const aggregated = {};
 
   for (const item of items) {
@@ -863,18 +876,21 @@ function computeCostForItems(items, storeId, options = {}) {
 
 // Single-recipe cost: NOT aggregated with the cart/other recipes, no cross-store substitution
 // (that's scoped to the shopping list only), and prorated rather than rounded to whole packages --
-// see computeCostForItems for why.
+// see computeCostForItems for why. Ingredients flagged exclude_from_list (e.g. salt, water) are
+// left out entirely -- not priced, not counted toward matched/total counts, never "missing".
 function getRecipeCost(recipeId, storeId) {
   const recipe = getRecipeWithIngredients(recipeId);
   if (!recipe) return null;
 
-  const items = recipe.ingredients.map(ing => ({
-    ingredient_id: ing.id,
-    name: ing.name,
-    unit_id: ing.unit_id,
-    unit_name: ing.unit,
-    quantity: ing.quantity
-  }));
+  const items = recipe.ingredients
+    .filter(ing => !ing.exclude_from_list)
+    .map(ing => ({
+      ingredient_id: ing.id,
+      name: ing.name,
+      unit_id: ing.unit_id,
+      unit_name: ing.unit,
+      quantity: ing.quantity
+    }));
 
   return computeCostForItems(items, storeId, { roundUp: false });
 }
@@ -938,6 +954,7 @@ module.exports = {
   updateIngredient,
   deleteIngredient,
   updateIngredientPreferredUnit,
+  updateIngredientExclusion,
   // Unit exports
   getAllUnits,
   getUnitById,

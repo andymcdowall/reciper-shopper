@@ -144,6 +144,15 @@ async function updateIngredientPreferredUnitAPI(id, preferred_unit_id) {
   return await response.json();
 }
 
+async function updateIngredientExclusionAPI(id, exclude_from_list) {
+  const response = await fetch(`/api/ingredients/${id}/exclude`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exclude_from_list })
+  });
+  return await response.json();
+}
+
 // Unit API functions
 async function fetchUnits() {
   const response = await fetch('/api/units');
@@ -481,6 +490,13 @@ async function renderIngredients() {
         </select>
       </div>
 
+      <!-- Shopping List Exclusion -->
+      <label class="ingredient-exclude-toggle">
+        <input type="checkbox" id="exclude-${ing.id}" ${ing.exclude_from_list ? 'checked' : ''}
+          onchange="toggleIngredientExclusion(${ing.id}, this.checked)">
+        Exclude from shopping list &amp; pricing
+      </label>
+
       <!-- Conversions -->
       <div class="ingredient-conversions" id="conversions-${ing.id}">
         <div class="conversions-header">
@@ -698,7 +714,11 @@ async function viewRecipeDetails(id) {
   document.getElementById('recipe-detail-meta').innerHTML =
     `<span>Servings: ${recipe.servings || 'N/A'}</span><span>Prep: ${recipe.prep_time || 'N/A'} min</span>`;
   document.getElementById('recipe-detail-ingredients').innerHTML =
-    '<ul>' + recipe.ingredients.map(ing => `<li>${ing.quantity} ${ing.unit} ${ing.name}</li>`).join('') + '</ul>';
+    '<ul>' + recipe.ingredients.map(ing => `
+      <li>${ing.quantity} ${ing.unit} ${ing.name}
+        ${ing.exclude_from_list ? '<span class="excluded-badge">not on shopping list</span>' : ''}
+      </li>
+    `).join('') + '</ul>';
   document.getElementById('recipe-detail-instructions').textContent = recipe.instructions || 'None';
 
   const costEl = document.getElementById('recipe-detail-cost');
@@ -895,6 +915,11 @@ async function deleteIngredient(id) {
 async function updatePreferredUnit(ingredientId, unitId) {
   const preferred_unit_id = unitId ? parseInt(unitId) : null;
   await updateIngredientPreferredUnitAPI(ingredientId, preferred_unit_id);
+  await fetchIngredients();
+}
+
+async function toggleIngredientExclusion(ingredientId, exclude) {
+  await updateIngredientExclusionAPI(ingredientId, exclude);
   await fetchIngredients();
 }
 
