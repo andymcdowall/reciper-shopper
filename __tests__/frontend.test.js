@@ -378,7 +378,7 @@ describe('Import Validation', () => {
 
 describe('Cost Summary Rendering Logic', () => {
   // Mirrors renderCostSummary() in public/app.js
-  function renderCostSummary(cost) {
+  function renderCostSummary(cost, servings) {
     if (!cost) return '';
 
     const substitutedItems = cost.substituted_items || [];
@@ -423,14 +423,44 @@ describe('Cost Summary Rendering Logic', () => {
       `;
     }).join('');
 
+    const perServingHtml = servings > 0
+      ? `<div class="cost-per-serving">$${(cost.total_cost / servings).toFixed(2)} per serving</div>`
+      : '';
+
     return `
       <div class="cost-summary">
         <strong>$${cost.total_cost.toFixed(2)} for ${matchLabel}</strong>
+        ${perServingHtml}
         ${missingHtml}
         <div class="cost-line-items">${lines}${substitutedLines}</div>
       </div>
     `;
   }
+
+  test('shows the per-serving cost when servings is provided', () => {
+    const html = renderCostSummary({
+      total_cost: 12.0,
+      matched_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: []
+    }, 4);
+
+    expect(html).toContain('cost-per-serving');
+    expect(html).toContain('$3.00 per serving');
+  });
+
+  test('omits the per-serving line for the shopping list, which has no servings', () => {
+    const html = renderCostSummary({
+      total_cost: 12.0,
+      matched_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('cost-per-serving');
+  });
 
   test('should show the missing-ingredients warning with the affected names', () => {
     const html = renderCostSummary({
@@ -638,14 +668,17 @@ describe('Manual List Item Rendering Logic', () => {
 
 describe('Recipe Card Cost Rendering Logic', () => {
   // Mirrors renderRecipeCardCost() in public/app.js
-  function renderRecipeCardCost(recipeId, selectedStoreId, recipeCosts) {
+  function renderRecipeCardCost(recipeId, selectedStoreId, recipeCosts, servings) {
     if (!selectedStoreId) return '';
     const cost = recipeCosts[recipeId];
     if (!cost) return '';
     const missingNote = cost.missing_ingredients.length
       ? ` <span class="recipe-card-cost-warning">(${cost.missing_ingredients.length} missing)</span>`
       : '';
-    return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${missingNote}</div>`;
+    const perServingNote = servings > 0
+      ? ` <span class="recipe-card-cost-per-serving">($${(cost.total_cost / servings).toFixed(2)}/serving)</span>`
+      : '';
+    return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${perServingNote}${missingNote}</div>`;
   }
 
   test('renders nothing when no store is selected', () => {
@@ -670,6 +703,17 @@ describe('Recipe Card Cost Rendering Logic', () => {
     expect(html).toContain('$3.00');
     expect(html).toContain('recipe-card-cost-warning');
     expect(html).toContain('(1 missing)');
+  });
+
+  test('shows the per-serving cost when servings is known', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } }, 4);
+    expect(html).toContain('recipe-card-cost-per-serving');
+    expect(html).toContain('($3.13/serving)');
+  });
+
+  test('omits the per-serving cost when servings is unset', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } }, null);
+    expect(html).not.toContain('recipe-card-cost-per-serving');
   });
 });
 

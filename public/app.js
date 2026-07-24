@@ -319,14 +319,17 @@ async function updateSettingsAPI(data) {
 
 // Renders a recipe card's cost line from the recipeCosts cache. Empty until a store is selected
 // and the cost has been fetched, so cards render immediately and fill in cost shortly after.
-function renderRecipeCardCost(recipeId) {
+function renderRecipeCardCost(recipeId, servings) {
   if (!selectedStoreId) return '';
   const cost = recipeCosts[recipeId];
   if (!cost) return '';
   const missingNote = cost.missing_ingredients.length
     ? ` <span class="recipe-card-cost-warning">(${cost.missing_ingredients.length} missing)</span>`
     : '';
-  return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${missingNote}</div>`;
+  const perServingNote = servings > 0
+    ? ` <span class="recipe-card-cost-per-serving">($${(cost.total_cost / servings).toFixed(2)}/serving)</span>`
+    : '';
+  return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${perServingNote}${missingNote}</div>`;
 }
 
 // Rendering functions
@@ -345,7 +348,7 @@ function renderRecipes() {
         ${recipe.servings ? `<span>Servings: ${recipe.servings}</span>` : ''}
         ${recipe.prep_time ? `<span>Prep: ${recipe.prep_time} min</span>` : ''}
       </div>
-      ${renderRecipeCardCost(recipe.id)}
+      ${renderRecipeCardCost(recipe.id, recipe.servings)}
       <div class="recipe-actions">
         <button onclick="viewRecipeDetails(${recipe.id})" class="btn-secondary">View</button>
         <button onclick="addRecipeToCart(${recipe.id})" class="btn-primary">Add to Cart</button>
@@ -370,7 +373,7 @@ function renderCart() {
         ${recipe.servings ? `<span>Servings: ${recipe.servings}</span>` : ''}
         ${recipe.prep_time ? `<span>Prep: ${recipe.prep_time} min</span>` : ''}
       </div>
-      ${renderRecipeCardCost(recipe.id)}
+      ${renderRecipeCardCost(recipe.id, recipe.servings)}
       <div class="recipe-actions">
         <button onclick="viewRecipeDetails(${recipe.id})" class="btn-secondary">View</button>
         <button onclick="removeRecipeFromCart(${recipe.id})" class="btn-danger">Remove</button>
@@ -481,8 +484,10 @@ async function includeInShoppingList(ingredientId) {
   await fetchShoppingList();
 }
 
-// Renders a cost object returned by /api/recipes/:id/cost or /api/shopping-list/cost
-function renderCostSummary(cost) {
+// Renders a cost object returned by /api/recipes/:id/cost or /api/shopping-list/cost. servings is
+// only meaningful for a single recipe's cost -- the shopping list has no serving count, so it's
+// left undefined there and the per-serving line is simply omitted.
+function renderCostSummary(cost, servings) {
   if (!cost) return '';
 
   const substitutedItems = cost.substituted_items || [];
@@ -527,9 +532,14 @@ function renderCostSummary(cost) {
     `;
   }).join('');
 
+  const perServingHtml = servings > 0
+    ? `<div class="cost-per-serving">$${(cost.total_cost / servings).toFixed(2)} per serving</div>`
+    : '';
+
   return `
     <div class="cost-summary">
       <strong>$${cost.total_cost.toFixed(2)} for ${matchLabel}</strong>
+      ${perServingHtml}
       ${missingHtml}
       <div class="cost-line-items">${lines}${substitutedLines}</div>
     </div>
@@ -806,7 +816,7 @@ async function viewRecipeDetails(id) {
   } else {
     const res = await fetch(`/api/recipes/${id}/cost?store_id=${selectedStoreId}`);
     const cost = await res.json();
-    costEl.innerHTML = renderCostSummary(cost);
+    costEl.innerHTML = renderCostSummary(cost, recipe.servings);
   }
 
   const modal = document.getElementById('recipe-detail-modal');
