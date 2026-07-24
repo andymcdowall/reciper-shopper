@@ -37,6 +37,8 @@ const {
   getIngredientById,
   updateIngredientExclusion,
   getOrCreateUnit,
+  createIngredientConversion,
+  convertUnits,
   getInUseUnitIds,
   deleteUnitsExcept,
   getOrCreateStore,
@@ -1040,6 +1042,64 @@ describe('API Integration Tests', () => {
 
       const list = getAggregatedShoppingList();
       expect(list.find(i => i.name === 'Exclusion Ops Manual Excluded')).toBeUndefined();
+    });
+  });
+
+  describe('Chained Cross-Category Conversion (neither the recipe nor price unit is one of the conversion\'s own units)', () => {
+    test('converts cups -> ml -> grams -> ounces via a gram<->ml ingredient conversion', () => {
+      const ml = getOrCreateUnit('Chain Ops Milliliter', 'volume', null, null, null);
+      const cup = getOrCreateUnit('Chain Ops Cup', 'volume', ml.id, 240, null);
+      const gram = getOrCreateUnit('Chain Ops Gram', 'mass', null, null, null);
+      const ounce = getOrCreateUnit('Chain Ops Ounce', 'mass', gram.id, 28.35, null);
+      const rice = getOrCreateIngredient('Chain Ops Rice');
+
+      // 1 gram of rice = 1.2 ml (an ingredient-specific density conversion), and neither cups
+      // nor ounces is one endpoint of this conversion -- both need a natural pre/post step.
+      createIngredientConversion.run({ ingredient_id: rice.id, from_unit_id: gram.id, to_unit_id: ml.id, factor: 1.2 });
+
+      // 2 cups -> 480 ml -> 400 g -> 14.1093... oz
+      const result = convertUnits(cup.id, ounce.id, 2, rice.id);
+      expect(result).toBeCloseTo(480 / 1.2 / 28.35, 5);
+    });
+
+    test('the same chain works in reverse -- ounces back to cups', () => {
+      const ml = getOrCreateUnit('Chain Ops Rev Milliliter', 'volume', null, null, null);
+      const cup = getOrCreateUnit('Chain Ops Rev Cup', 'volume', ml.id, 240, null);
+      const gram = getOrCreateUnit('Chain Ops Rev Gram', 'mass', null, null, null);
+      const ounce = getOrCreateUnit('Chain Ops Rev Ounce', 'mass', gram.id, 28.35, null);
+      const rice = getOrCreateIngredient('Chain Ops Rev Rice');
+
+      createIngredientConversion.run({ ingredient_id: rice.id, from_unit_id: gram.id, to_unit_id: ml.id, factor: 1.2 });
+
+      const forward = convertUnits(cup.id, ounce.id, 2, rice.id);
+      const roundTrip = convertUnits(ounce.id, cup.id, forward, rice.id);
+      expect(roundTrip).toBeCloseTo(2, 5);
+    });
+
+    test('a recipe priced this way is no longer reported as missing/unavailable', () => {
+      const ml = getOrCreateUnit('Chain Ops Cost Milliliter', 'volume', null, null, null);
+      const cup = getOrCreateUnit('Chain Ops Cost Cup', 'volume', ml.id, 240, null);
+      const gram = getOrCreateUnit('Chain Ops Cost Gram', 'mass', null, null, null);
+      const ounce = getOrCreateUnit('Chain Ops Cost Ounce', 'mass', gram.id, 28.35, null);
+      const rice = getOrCreateIngredient('Chain Ops Cost Rice');
+      const store = getOrCreateStore('Chain Ops Cost Store');
+
+      createIngredientConversion.run({ ingredient_id: rice.id, from_unit_id: gram.id, to_unit_id: ml.id, factor: 1.2 });
+      createPriceOption({
+        ingredient_id: rice.id, store_id: store.id,
+        package_quantity: 16, package_unit_id: ounce.id, price: 3.5, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Chain Ops Chicken and Rice',
+        servings: 4, prep_time: 20, instructions: '',
+        ingredients: [{ ingredient_id: rice.id, quantity: 2, unit_id: cup.id }]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.missing_ingredients).toHaveLength(0);
+      expect(cost.matched_count).toBe(1);
+      expect(cost.total_cost).toBeGreaterThan(0);
     });
   });
 

@@ -490,7 +490,10 @@ function tryNaturalConvert(fromUnitId, toUnitId, quantity) {
 // Supports three conversion strategies (tried in order):
 //   1. Direct ingredient conversion (e.g. 1 cup butter = X g)
 //   2. Natural conversion within the same category via base units (e.g. tbsp → ml)
-//   3. Chained conversion: ingredient-specific cross-category step + natural step (e.g. g butter → ml → tbsp)
+//   3. Chained conversion: a natural step into whichever side of an ingredient-specific
+//      cross-category conversion shares fromUnit's category, the ingredient conversion itself,
+//      then a natural step from there into toUnit (e.g. cups rice → ml → g rice → oz, via a
+//      gram↔ml conversion -- neither cups nor oz has to be one of the conversion's own units)
 function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
   if (fromUnitId === toUnitId) return quantity;
 
@@ -508,22 +511,22 @@ function convertUnits(fromUnitId, toUnitId, quantity, ingredientId = null) {
     const reverse = conversions.find(c => c.from_unit_id === toUnitId && c.to_unit_id === fromUnitId);
     if (reverse) return quantity / reverse.factor;
 
-    // Strategy 3: chained — use an ingredient conversion to reach the same category as toUnit,
-    // then use a natural conversion for the remainder (e.g. g butter → ml → tbsp)
+    // Strategy 3: chained
     if (fromUnit.category !== toUnit.category) {
       for (const conv of conversions) {
-        let intermediateUnitId, intermediateQuantity;
-        if (conv.from_unit_id === fromUnitId) {
-          intermediateUnitId = conv.to_unit_id;
-          intermediateQuantity = quantity * conv.factor;
-        } else if (conv.to_unit_id === fromUnitId) {
-          intermediateUnitId = conv.from_unit_id;
-          intermediateQuantity = quantity / conv.factor;
-        } else {
-          continue;
+        const pivots = [
+          { pivotFromId: conv.from_unit_id, pivotToId: conv.to_unit_id, factor: conv.factor },
+          { pivotFromId: conv.to_unit_id, pivotToId: conv.from_unit_id, factor: 1 / conv.factor }
+        ];
+
+        for (const pivot of pivots) {
+          const inPivotFromUnit = tryNaturalConvert(fromUnitId, pivot.pivotFromId, quantity);
+          if (inPivotFromUnit === null) continue;
+
+          const inPivotToUnit = inPivotFromUnit * pivot.factor;
+          const result = tryNaturalConvert(pivot.pivotToId, toUnitId, inPivotToUnit);
+          if (result !== null) return result;
         }
-        const result = tryNaturalConvert(intermediateUnitId, toUnitId, intermediateQuantity);
-        if (result !== null) return result;
       }
     }
   }
