@@ -1956,12 +1956,16 @@ document.getElementById('add-unit-modal-form').addEventListener('submit', async 
   }
 });
 
-// Initialize
-fetchRecipes();
-fetchCart();
+// Initialize. Settings (which holds the persisted selected store) must resolve before recipes/cart
+// are fetched -- otherwise fetchRecipes()/fetchCart() check selectedStoreId while it's still null
+// and never fetch per-card cost, and nothing re-checks it once settings actually loads.
+Promise.all([fetchStores(), fetchSettings()]).then(() => {
+  renderStoreSelectOptions();
+  fetchRecipes();
+  fetchCart();
+});
 fetchIngredients();
 fetchUnits();
-Promise.all([fetchStores(), fetchSettings()]).then(() => renderStoreSelectOptions());
 
 // Attach autocomplete to initial ingredient row
 document.addEventListener('DOMContentLoaded', () => {

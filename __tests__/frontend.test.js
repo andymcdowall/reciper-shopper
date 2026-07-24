@@ -922,3 +922,49 @@ describe('Shopping List Aggregation Logic', () => {
     expect(result).toHaveLength(2);
   });
 });
+
+describe('App Initialization (executes the real public/app.js, not a hand-written mirror)', () => {
+  // Every other suite in this file re-implements a small slice of app.js's rendering logic and
+  // asserts against that copy -- useful for pinning down formatting, but it can never catch a bug
+  // in how the real file wires things together (e.g. a startup race condition), since the mirror
+  // is definitionally correct by construction. This suite instead loads and executes the actual
+  // app.js source against a mocked fetch, so it exercises the real initialization sequence.
+  const appJsSource = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
+
+  function mockApiResponse(data) {
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
+  }
+
+  async function flushMicrotasks(times = 50) {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+    }
+  }
+
+  test('recipe cards show cost on first load when a store was already selected in settings', async () => {
+    global.fetch = jest.fn((url) => {
+      if (url === '/api/recipes') return mockApiResponse([{ id: 1, name: 'Bread', servings: 4, prep_time: 5 }]);
+      if (url === '/api/cart') return mockApiResponse([]);
+      if (url === '/api/ingredients') return mockApiResponse([]);
+      if (url === '/api/units') return mockApiResponse([]);
+      if (url === '/api/stores') return mockApiResponse([{ id: 1, name: 'Test Store' }]);
+      if (url === '/api/settings') return mockApiResponse({ selected_store_id: 1, price_staleness_days: 182 });
+      if (url === '/api/recipes/1/cost?store_id=1') {
+        return mockApiResponse({
+          total_cost: 10, matched_count: 1, total_count: 1, substituted_count: 0,
+          items: [], substituted_items: [], missing_ingredients: []
+        });
+      }
+      return mockApiResponse([]);
+    });
+
+    // Runs the real top-level init code in app.js (fetchRecipes(), fetchCart(), the settings load,
+    // etc.) in its own function scope, exactly as the browser would on page load.
+    new Function(appJsSource)();
+    await flushMicrotasks();
+
+    const cardHtml = document.getElementById('recipes-list').innerHTML;
+    expect(cardHtml).toContain('recipe-card-cost');
+    expect(cardHtml).toContain('$10.00');
+  });
+});
