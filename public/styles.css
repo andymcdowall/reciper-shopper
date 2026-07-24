@@ -553,6 +553,7 @@ button:disabled:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .ingredient-name {
@@ -763,6 +764,7 @@ button:disabled:hover {
 
 .conversion-add-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
@@ -770,6 +772,7 @@ button:disabled:hover {
 .conversion-add-form select,
 .conversion-add-form input {
   flex: 1;
+  min-width: 90px;
   padding: 0.5rem;
   border: 1px solid #ddd;
   border-radius: 4px;
