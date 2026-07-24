@@ -404,13 +404,19 @@ describe('Cost Summary Rendering Logic', () => {
     `;
     }).join('');
 
+    const formatPackageBreakdown = s =>
+      `${s.packages_needed} &times; ${s.package_quantity} ${s.package_unit_name} @ $${s.unit_price.toFixed(2)}`;
+
     const substitutedLines = substitutedItems.map(item => {
       const sourceLabel = item.is_blended
         ? `blended from ${item.source_stores.map(s => s.store_name).join(' & ')}`
         : `from ${item.source_stores[0].store_name}`;
+      const desc = item.is_blended
+        ? `${item.name}: ${item.source_stores.map(formatPackageBreakdown).join(' & ')} = $${item.line_cost.toFixed(2)}`
+        : `${item.name}: ${formatPackageBreakdown(item.source_stores[0])} = $${item.line_cost.toFixed(2)}`;
       return `
         <div class="cost-line-item cost-substituted ${item.is_stale ? 'price-stale' : ''}">
-          <span>${item.name}: $${item.line_cost.toFixed(2)}</span>
+          <span>${desc}</span>
           <span class="substituted-badge">${sourceLabel}</span>
           ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
         </div>
@@ -439,7 +445,7 @@ describe('Cost Summary Rendering Logic', () => {
     expect(html).toContain('Missing at this store: tahini, saffron');
   });
 
-  test('should show a substituted-item badge naming the source store', () => {
+  test('should show a substituted item\'s package breakdown, just like a native price', () => {
     const html = renderCostSummary({
       total_cost: 6.0,
       matched_count: 0,
@@ -452,7 +458,13 @@ describe('Cost Summary Rendering Logic', () => {
         line_cost: 6.0,
         is_blended: false,
         is_stale: false,
-        source_stores: [{ store_name: 'Trader Joe\'s' }]
+        source_stores: [{
+          store_name: 'Trader Joe\'s',
+          packages_needed: 2,
+          package_quantity: 1,
+          package_unit_name: 'jar',
+          unit_price: 3.0
+        }]
       }]
     });
 
@@ -460,9 +472,10 @@ describe('Cost Summary Rendering Logic', () => {
     expect(html).toContain('substituted-badge');
     expect(html).toContain('from Trader Joe\'s');
     expect(html).toContain('cost-substituted');
+    expect(html).toContain('saffron: 2 &times; 1 jar @ $3.00 = $6.00');
   });
 
-  test('should label a blended substitute with both contributing stores', () => {
+  test('should label a blended substitute with both contributing stores\' package breakdowns', () => {
     const html = renderCostSummary({
       total_cost: 3.0,
       matched_count: 0,
@@ -475,11 +488,15 @@ describe('Cost Summary Rendering Logic', () => {
         line_cost: 3.0,
         is_blended: true,
         is_stale: false,
-        source_stores: [{ store_name: 'Store A' }, { store_name: 'Store B' }]
+        source_stores: [
+          { store_name: 'Store A', packages_needed: 1, package_quantity: 1, package_unit_name: 'jar', unit_price: 2.0 },
+          { store_name: 'Store B', packages_needed: 1, package_quantity: 1, package_unit_name: 'jar', unit_price: 4.0 }
+        ]
       }]
     });
 
     expect(html).toContain('blended from Store A & Store B');
+    expect(html).toContain('1 &times; 1 jar @ $2.00 & 1 &times; 1 jar @ $4.00 = $3.00');
   });
 
   test('should not render a warning when nothing is missing', () => {
@@ -700,21 +717,46 @@ describe('Shopping List "Don\'t Need to Buy" Rendering Logic', () => {
 });
 
 describe('Shopping List Buy-Increment Rendering Logic', () => {
-  // Mirrors the packages-to-buy slice of renderShoppingList() in public/app.js
+  // Mirrors the packages-to-buy slice of renderShoppingList() in public/app.js. costByIngredient
+  // maps ingredient_id -> array of {packages_needed, package_quantity, package_unit_name}, since
+  // a patched-in (substituted) item can have one entry per contributing store when blended.
   function renderBuyIncrement(item, costByIngredient) {
     const priced = costByIngredient[item.ingredient_id];
     return priced
-      ? `<span class="buy-increment">buy ${priced.packages_needed} &times; ${priced.package_quantity} ${priced.package_unit_name}</span>`
+      ? `<span class="buy-increment">buy ${priced.map(p => `${p.packages_needed} &times; ${p.package_quantity} ${p.package_unit_name}`).join(' & ')}</span>`
       : '';
   }
 
   test('an item priced at the selected store shows the packages-to-buy alongside the raw quantity', () => {
     const item = { ingredient_id: 1, name: 'flour', quantity: 5, unit: 'cups' };
-    const costByIngredient = { 1: { packages_needed: 2, package_quantity: 5, package_unit_name: '5lb bag' } };
+    const costByIngredient = { 1: [{ packages_needed: 2, package_quantity: 5, package_unit_name: '5lb bag' }] };
 
     const html = renderBuyIncrement(item, costByIngredient);
 
     expect(html).toContain('buy 2 &times; 5 5lb bag');
+  });
+
+  test('an item patched in from another store shows the same packages-to-buy format as a native price', () => {
+    const item = { ingredient_id: 3, name: 'rice', quantity: 2, unit: 'cups' };
+    const costByIngredient = { 3: [{ packages_needed: 1, package_quantity: 16, package_unit_name: 'oz' }] };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 1 &times; 16 oz');
+  });
+
+  test('an item blended from two stores shows both stores\' package breakdowns', () => {
+    const item = { ingredient_id: 4, name: 'saffron', quantity: 1, unit: 'tsp' };
+    const costByIngredient = {
+      4: [
+        { packages_needed: 1, package_quantity: 1, package_unit_name: 'jar' },
+        { packages_needed: 2, package_quantity: 1, package_unit_name: 'vial' }
+      ]
+    };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 1 &times; 1 jar & 2 &times; 1 vial');
   });
 
   test('an item with no price at the selected store shows no buy-increment', () => {

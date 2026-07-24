@@ -395,10 +395,24 @@ function renderShoppingList(items, cost) {
       ? renderCostSummary(cost)
       : '<p class="empty-state">Select a store above to see cost.</p>';
 
+  // Both directly-priced and patched-in (substituted) items carry package/quantity/unit-price
+  // data -- normalize both into the same {packages_needed, package_quantity, package_unit_name}
+  // shape so the "buy" hint below looks identical either way, per-store.
   const costByIngredient = {};
-  if (cost && cost.items) {
-    for (const lineItem of cost.items) {
-      costByIngredient[lineItem.ingredient_id] = lineItem;
+  if (cost) {
+    for (const lineItem of (cost.items || [])) {
+      costByIngredient[lineItem.ingredient_id] = [{
+        packages_needed: lineItem.packages_needed,
+        package_quantity: lineItem.package_quantity,
+        package_unit_name: lineItem.package_unit_name
+      }];
+    }
+    for (const subItem of (cost.substituted_items || [])) {
+      costByIngredient[subItem.ingredient_id] = subItem.source_stores.map(s => ({
+        packages_needed: s.packages_needed,
+        package_quantity: s.package_quantity,
+        package_unit_name: s.package_unit_name
+      }));
     }
   }
 
@@ -409,7 +423,7 @@ function renderShoppingList(items, cost) {
       ${items.map(item => {
         const priced = costByIngredient[item.ingredient_id];
         const buyHtml = priced
-          ? `<span class="buy-increment">buy ${priced.packages_needed} &times; ${priced.package_quantity} ${priced.package_unit_name}</span>`
+          ? `<span class="buy-increment">buy ${priced.map(p => `${p.packages_needed} &times; ${p.package_quantity} ${p.package_unit_name}`).join(' & ')}</span>`
           : '';
         return `
         <li class="${item.has_manual ? 'manually-added' : ''}">
@@ -494,13 +508,19 @@ function renderCostSummary(cost) {
   `;
   }).join('');
 
+  const formatPackageBreakdown = s =>
+    `${s.packages_needed} &times; ${s.package_quantity} ${s.package_unit_name} @ $${s.unit_price.toFixed(2)}`;
+
   const substitutedLines = substitutedItems.map(item => {
     const sourceLabel = item.is_blended
       ? `blended from ${item.source_stores.map(s => s.store_name).join(' & ')}`
       : `from ${item.source_stores[0].store_name}`;
+    const desc = item.is_blended
+      ? `${item.name}: ${item.source_stores.map(formatPackageBreakdown).join(' & ')} = $${item.line_cost.toFixed(2)}`
+      : `${item.name}: ${formatPackageBreakdown(item.source_stores[0])} = $${item.line_cost.toFixed(2)}`;
     return `
       <div class="cost-line-item cost-substituted ${item.is_stale ? 'price-stale' : ''}">
-        <span>${item.name}: $${item.line_cost.toFixed(2)}</span>
+        <span>${desc}</span>
         <span class="substituted-badge">${sourceLabel}</span>
         ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
       </div>
