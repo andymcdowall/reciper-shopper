@@ -14,6 +14,7 @@ let editingUnitId = null;
 let editingStoreId = null;
 let editingRecipeId = null;
 let currentDetailRecipeId = null;
+let recipeCosts = {}; // keyed by recipe id, populated only while a store is selected
 
 // API functions
 async function fetchRecipes() {
@@ -21,6 +22,20 @@ async function fetchRecipes() {
   recipes = await response.json();
   renderRecipes();
   updateCartCount();
+
+  if (selectedStoreId) {
+    await fetchRecipeCosts(recipes);
+    renderRecipes();
+  }
+}
+
+// Fetches and caches each recipe's cost at the selected store, in parallel, for card previews.
+async function fetchRecipeCosts(recipeList) {
+  if (!selectedStoreId) return;
+  await Promise.all(recipeList.map(async (recipe) => {
+    const res = await fetch(`/api/recipes/${recipe.id}/cost?store_id=${selectedStoreId}`);
+    recipeCosts[recipe.id] = await res.json();
+  }));
 }
 
 async function fetchRecipe(id) {
@@ -59,6 +74,11 @@ async function fetchCart() {
   cartRecipes = await response.json();
   renderCart();
   updateCartCount();
+
+  if (selectedStoreId) {
+    await fetchRecipeCosts(cartRecipes);
+    renderCart();
+  }
 }
 
 async function addRecipeToCart(recipeId) {
@@ -297,6 +317,18 @@ async function updateSettingsAPI(data) {
   return await response.json();
 }
 
+// Renders a recipe card's cost line from the recipeCosts cache. Empty until a store is selected
+// and the cost has been fetched, so cards render immediately and fill in cost shortly after.
+function renderRecipeCardCost(recipeId) {
+  if (!selectedStoreId) return '';
+  const cost = recipeCosts[recipeId];
+  if (!cost) return '';
+  const missingNote = cost.missing_ingredients.length
+    ? ` <span class="recipe-card-cost-warning">(${cost.missing_ingredients.length} missing)</span>`
+    : '';
+  return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${missingNote}</div>`;
+}
+
 // Rendering functions
 function renderRecipes() {
   const container = document.getElementById('recipes-list');
@@ -313,6 +345,7 @@ function renderRecipes() {
         ${recipe.servings ? `<span>Servings: ${recipe.servings}</span>` : ''}
         ${recipe.prep_time ? `<span>Prep: ${recipe.prep_time} min</span>` : ''}
       </div>
+      ${renderRecipeCardCost(recipe.id)}
       <div class="recipe-actions">
         <button onclick="viewRecipeDetails(${recipe.id})" class="btn-secondary">View</button>
         <button onclick="addRecipeToCart(${recipe.id})" class="btn-primary">Add to Cart</button>
@@ -337,6 +370,7 @@ function renderCart() {
         ${recipe.servings ? `<span>Servings: ${recipe.servings}</span>` : ''}
         ${recipe.prep_time ? `<span>Prep: ${recipe.prep_time} min</span>` : ''}
       </div>
+      ${renderRecipeCardCost(recipe.id)}
       <div class="recipe-actions">
         <button onclick="viewRecipeDetails(${recipe.id})" class="btn-secondary">View</button>
         <button onclick="removeRecipeFromCart(${recipe.id})" class="btn-danger">Remove</button>
@@ -1095,12 +1129,25 @@ async function saveStalenessDays() {
 async function changeSelectedStore(storeIdValue) {
   selectedStoreId = storeIdValue ? parseInt(storeIdValue) : null;
   await updateSettingsAPI({ selected_store_id: selectedStoreId });
+  recipeCosts = {};
 
   // Refresh whatever store-sensitive view is currently open
   if (currentView === 'shopping-list') {
     await fetchShoppingList();
   } else if (currentView === 'ingredients') {
     await renderIngredients();
+  } else if (currentView === 'recipes') {
+    renderRecipes();
+    if (selectedStoreId) {
+      await fetchRecipeCosts(recipes);
+      renderRecipes();
+    }
+  } else if (currentView === 'cart') {
+    renderCart();
+    if (selectedStoreId) {
+      await fetchRecipeCosts(cartRecipes);
+      renderCart();
+    }
   }
 }
 

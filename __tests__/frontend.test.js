@@ -619,6 +619,43 @@ describe('Manual List Item Rendering Logic', () => {
   });
 });
 
+describe('Recipe Card Cost Rendering Logic', () => {
+  // Mirrors renderRecipeCardCost() in public/app.js
+  function renderRecipeCardCost(recipeId, selectedStoreId, recipeCosts) {
+    if (!selectedStoreId) return '';
+    const cost = recipeCosts[recipeId];
+    if (!cost) return '';
+    const missingNote = cost.missing_ingredients.length
+      ? ` <span class="recipe-card-cost-warning">(${cost.missing_ingredients.length} missing)</span>`
+      : '';
+    return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${missingNote}</div>`;
+  }
+
+  test('renders nothing when no store is selected', () => {
+    const html = renderRecipeCardCost(1, null, { 1: { total_cost: 5, missing_ingredients: [] } });
+    expect(html).toBe('');
+  });
+
+  test('renders nothing while the cost has not been fetched yet', () => {
+    const html = renderRecipeCardCost(1, 2, {});
+    expect(html).toBe('');
+  });
+
+  test('renders the total cost once fetched', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } });
+    expect(html).toContain('recipe-card-cost');
+    expect(html).toContain('$12.50');
+    expect(html).not.toContain('recipe-card-cost-warning');
+  });
+
+  test('flags missing ingredients on the card', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 3, missing_ingredients: [{ name: 'saffron' }] } });
+    expect(html).toContain('$3.00');
+    expect(html).toContain('recipe-card-cost-warning');
+    expect(html).toContain('(1 missing)');
+  });
+});
+
 describe('Shopping List "Don\'t Need to Buy" Rendering Logic', () => {
   // Mirrors the relevant slices of renderShoppingList() in public/app.js
   function renderListItemActions(item) {

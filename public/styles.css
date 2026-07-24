@@ -115,6 +115,19 @@ h2 {
   color: #666;
 }
 
+.recipe-card-cost {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #27ae60;
+  margin-bottom: 1rem;
+}
+
+.recipe-card-cost-warning {
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: #c0392b;
+}
+
 .recipe-actions {
   display: flex;
   gap: 0.5rem;
