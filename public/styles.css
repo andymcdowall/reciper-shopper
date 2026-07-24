@@ -973,6 +973,7 @@ button:disabled:hover {
   border-radius: 6px;
   padding: 1rem;
   margin-bottom: 1rem;
+  max-width: 600px;
 }
 
 .cost-summary strong {
@@ -999,8 +1000,10 @@ button:disabled:hover {
 
 .cost-line-item {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 0.4rem;
   font-size: 0.85rem;
   color: #444;
 }
