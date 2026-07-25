@@ -479,16 +479,37 @@ app.get('/api/units', (req, res) => {
   }
 });
 
+// A derived unit's category is not an independent choice -- it's whatever category its base unit
+// belongs to (grams => mass, mL => volume, etc). Trusting a client-supplied category here is how
+// "Pinch" ended up filed under Count while converting into Milliliter, silently breaking any
+// conversion chain that needed to reach it through the volume category. So when base_unit_id is
+// present, category is always derived from the base unit server-side, regardless of what (if
+// anything) the client sent. Only a genuine new base unit (no base_unit_id) needs an explicit,
+// manually-chosen category, since there's nothing to derive it from.
+function resolveUnitCategory(base_unit_id, requestedCategory) {
+  if (base_unit_id) {
+    const baseUnit = getUnitById.get(base_unit_id);
+    if (!baseUnit) {
+      return { error: 'Invalid base_unit_id' };
+    }
+    return { category: baseUnit.category };
+  }
+
+  if (!requestedCategory) {
+    return { error: 'Category is required when creating a new base unit' };
+  }
+  if (!['volume', 'mass', 'length', 'count'].includes(requestedCategory)) {
+    return { error: 'Invalid category. Must be volume, mass, length, or count' };
+  }
+  return { category: requestedCategory };
+}
+
 app.post('/api/units', (req, res) => {
   try {
-    const { name, category, base_unit_id, to_base_factor } = req.body;
+    const { name, category, base_unit_id, to_base_factor, rounding_increment } = req.body;
 
-    if (!name || !name.trim() || !category) {
-      return res.status(400).json({ error: 'Unit name and category are required' });
-    }
-
-    if (!['volume', 'mass', 'length', 'count'].includes(category)) {
-      return res.status(400).json({ error: 'Invalid category. Must be volume, mass, length, or count' });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Unit name is required' });
     }
 
     // If base_unit_id is provided, to_base_factor is required
@@ -496,10 +517,14 @@ app.post('/api/units', (req, res) => {
       return res.status(400).json({ error: 'to_base_factor is required when base_unit_id is provided' });
     }
 
-    const { rounding_increment } = req.body;
+    const resolved = resolveUnitCategory(base_unit_id, category);
+    if (resolved.error) {
+      return res.status(400).json({ error: resolved.error });
+    }
+
     const result = createUnit.run({
       name: name.trim(),
-      category,
+      category: resolved.category,
       base_unit_id: base_unit_id || null,
       to_base_factor: to_base_factor || null,
       rounding_increment: rounding_increment || null
@@ -515,8 +540,8 @@ app.put('/api/units/:id', (req, res) => {
   try {
     const { name, category, base_unit_id, to_base_factor, rounding_increment } = req.body;
 
-    if (!name || !name.trim() || !category) {
-      return res.status(400).json({ error: 'Unit name and category are required' });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Unit name is required' });
     }
 
     const existing = getUnitById.get(req.params.id);
@@ -524,10 +549,19 @@ app.put('/api/units/:id', (req, res) => {
       return res.status(404).json({ error: 'Unit not found' });
     }
 
+    if (base_unit_id && !to_base_factor) {
+      return res.status(400).json({ error: 'to_base_factor is required when base_unit_id is provided' });
+    }
+
+    const resolved = resolveUnitCategory(base_unit_id, category);
+    if (resolved.error) {
+      return res.status(400).json({ error: resolved.error });
+    }
+
     updateUnit.run({
       id: req.params.id,
       name: name.trim(),
-      category,
+      category: resolved.category,
       base_unit_id: base_unit_id || null,
       to_base_factor: to_base_factor || null,
       rounding_increment: rounding_increment || null
@@ -1108,6 +1142,10 @@ app.post('/api/import', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Recipe Shopper server running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Recipe Shopper server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

@@ -17,9 +17,9 @@ if (fs.existsSync(testDbPath)) {
   fs.unlinkSync(testDbPath);
 }
 
-// Now require the actual server module
-// Note: We can't use server.js directly because it starts listening
-// So we'll test the individual functions instead
+// Now require the actual server module. server.js only calls app.listen() when run directly
+// (require.main === module), so requiring it here just gives us the Express app for supertest.
+const app = require('../server');
 
 const {
   getAllRecipes,
@@ -1345,6 +1345,102 @@ describe('API Integration Tests', () => {
       expect(getUnitById.get(base.id)).toBeUndefined();
       expect(getUnitById.get(derived.id)).toBeUndefined();
       expect(getUnitById.get(protectedUnit.id)).toBeDefined();
+    });
+  });
+
+  describe('Unit Category Derivation (POST/PUT /api/units)', () => {
+    // A derived unit's category is not an independent choice -- it must match its base unit's
+    // category. This is the exact mechanism behind a real bug: "Pinch" was mislabeled category
+    // "count" while converting into Milliliter (volume), which silently broke any conversion
+    // chain that needed to reach Pinch through the volume category -- an ingredient priced by
+    // weight came back "unavailable" even though a valid density conversion existed. The server
+    // now derives category from base_unit_id server-side, regardless of what the client sends.
+    test('a base unit (no base_unit_id) requires an explicit category', async () => {
+      const res = await request(app)
+        .post('/api/units')
+        .send({ name: 'Category Ops Orphan Unit' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/category/i);
+    });
+
+    test('category is derived from the base unit, ignoring a mismatched category sent by the client', async () => {
+      const mlRes = await request(app)
+        .post('/api/units')
+        .send({ name: 'Category Ops Milliliter', category: 'volume' });
+      expect(mlRes.status).toBe(201);
+
+      // Deliberately send category: 'count' while linking to a volume base unit.
+      const pinchRes = await request(app)
+        .post('/api/units')
+        .send({
+          name: 'Category Ops Pinch',
+          category: 'count',
+          base_unit_id: mlRes.body.id,
+          to_base_factor: 0.3
+        });
+
+      expect(pinchRes.status).toBe(201);
+      expect(pinchRes.body.category).toBe('volume');
+    });
+
+    test('category derivation also applies on PUT (edit), not just POST (create)', async () => {
+      const gramRes = await request(app)
+        .post('/api/units')
+        .send({ name: 'Category Ops Gram', category: 'mass' });
+      const ozRes = await request(app)
+        .post('/api/units')
+        .send({ name: 'Category Ops Ounce', category: 'mass', base_unit_id: gramRes.body.id, to_base_factor: 28.35 });
+
+      const updateRes = await request(app)
+        .put(`/api/units/${ozRes.body.id}`)
+        .send({
+          name: 'Category Ops Ounce',
+          category: 'length', // deliberately wrong
+          base_unit_id: gramRes.body.id,
+          to_base_factor: 28.35
+        });
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.body.category).toBe('mass');
+    });
+
+    test('an invalid base_unit_id is rejected rather than silently creating an orphaned unit', async () => {
+      const res = await request(app)
+        .post('/api/units')
+        .send({ name: 'Category Ops Bad Base', base_unit_id: 999999, to_base_factor: 1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/base_unit_id/i);
+    });
+
+    test('end-to-end: a mass-priced ingredient measured by a mislabeled-then-corrected volume unit resolves a cost', async () => {
+      const mlRes = await request(app).post('/api/units').send({ name: 'Category Ops E2E Milliliter', category: 'volume' });
+      const gramRes = await request(app).post('/api/units').send({ name: 'Category Ops E2E Gram', category: 'mass' });
+      // Same mistake as the real bug: category sent as 'count', should be corrected to 'volume'
+      const pinchRes = await request(app).post('/api/units').send({
+        name: 'Category Ops E2E Pinch', category: 'count', base_unit_id: mlRes.body.id, to_base_factor: 0.3
+      });
+      expect(pinchRes.body.category).toBe('volume');
+
+      const ingredient = getOrCreateIngredient('Category Ops E2E Thyme');
+      const store = getOrCreateStore('Category Ops E2E Store');
+      createIngredientConversion.run({ ingredient_id: ingredient.id, from_unit_id: gramRes.body.id, to_unit_id: mlRes.body.id, factor: 2 });
+      createPriceOption({
+        ingredient_id: ingredient.id, store_id: store.id,
+        package_quantity: 10, package_unit_id: gramRes.body.id, price: 3.99, is_preferred: true
+      });
+
+      const recipeId = createRecipeWithIngredients({
+        name: 'Category Ops E2E Dumplings',
+        servings: 4, prep_time: 30, instructions: '',
+        ingredients: [{ ingredient_id: ingredient.id, quantity: 1, unit_id: pinchRes.body.id }]
+      });
+
+      const cost = getRecipeCost(recipeId, store.id);
+      expect(cost.missing_ingredients).toHaveLength(0);
+      expect(cost.matched_count).toBe(1);
+      expect(cost.total_cost).toBeGreaterThan(0);
     });
   });
 });

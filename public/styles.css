@@ -623,6 +623,12 @@ button:disabled:hover {
   margin: 0.5rem 0 0;
 }
 
+.unit-category-hint {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0.35rem 0 0;
+}
+
 #reset-units-result {
   margin-top: 0.75rem;
 }

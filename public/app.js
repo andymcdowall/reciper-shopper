@@ -702,17 +702,18 @@ function renderUnits() {
       <div class="unit-conversion" id="unit-conv-${unit.id}">${conversionText}${roundingText ? ` &middot; ${roundingText}` : ''}</div>
       <div class="unit-edit-form" id="unit-edit-${unit.id}" style="display: none;">
         <input type="text" id="unit-edit-name-${unit.id}" value="${unit.name}">
-        <select id="unit-edit-category-${unit.id}">
-          <option value="volume" ${unit.category === 'volume' ? 'selected' : ''}>Volume</option>
-          <option value="mass" ${unit.category === 'mass' ? 'selected' : ''}>Mass</option>
-          <option value="length" ${unit.category === 'length' ? 'selected' : ''}>Length</option>
-          <option value="count" ${unit.category === 'count' ? 'selected' : ''}>Count</option>
-        </select>
-        <select id="unit-edit-base-${unit.id}">
-          <option value="">Base unit</option>
+        <select id="unit-edit-base-${unit.id}"
+          onchange="syncCategoryFromBaseUnit(this, document.getElementById('unit-edit-category-${unit.id}'))">
+          <option value="">None (this is a base unit)</option>
           ${units.filter(u => u.base_unit_id === null && u.id !== unit.id).map(u => `
-            <option value="${u.id}" ${unit.base_unit_id === u.id ? 'selected' : ''}>${u.name}</option>
+            <option value="${u.id}" ${unit.base_unit_id === u.id ? 'selected' : ''}>${u.name} (${u.category})</option>
           `).join('')}
+        </select>
+        <select id="unit-edit-category-${unit.id}" ${baseUnit ? 'disabled' : ''}>
+          <option value="volume" ${(baseUnit ? baseUnit.category : unit.category) === 'volume' ? 'selected' : ''}>Volume</option>
+          <option value="mass" ${(baseUnit ? baseUnit.category : unit.category) === 'mass' ? 'selected' : ''}>Mass</option>
+          <option value="length" ${(baseUnit ? baseUnit.category : unit.category) === 'length' ? 'selected' : ''}>Length</option>
+          <option value="count" ${(baseUnit ? baseUnit.category : unit.category) === 'count' ? 'selected' : ''}>Count</option>
         </select>
         <input type="number" id="unit-edit-factor-${unit.id}" value="${unit.to_base_factor || ''}" placeholder="Conversion factor" step="0.000001">
         <input type="number" id="unit-edit-rounding-${unit.id}" value="${unit.rounding_increment || ''}" placeholder="Rounding (e.g. 0.25, 1)" step="0.000001" min="0">
@@ -728,7 +729,7 @@ function renderUnits() {
   }).join('');
 
   // Update the base unit dropdown in the add form
-  updateBaseUnitDropdown();
+  populateBaseUnitOptions(document.getElementById('new-unit-base'), null);
 }
 
 function renderStores() {
@@ -1209,6 +1210,7 @@ async function addUnit() {
     );
     document.getElementById('new-unit-name').value = '';
     document.getElementById('new-unit-category').value = '';
+    document.getElementById('new-unit-category').disabled = false;
     document.getElementById('new-unit-base').value = '';
     document.getElementById('new-unit-factor').value = '';
     document.getElementById('new-unit-rounding').value = '';
@@ -1295,18 +1297,29 @@ async function resetUnitsToCommon() {
   }
 }
 
-function updateBaseUnitDropdown() {
-  const select = document.getElementById('new-unit-base');
-  const category = document.getElementById('new-unit-category').value;
+// A unit's category is dictated by whatever base unit it converts into (grams => mass, mL =>
+// volume, etc.) -- letting category be picked independently of the base unit is how "Pinch" ended
+// up filed under Count while converting into Milliliter, silently breaking any conversion chain
+// that needed to reach it through the volume category. So the base-unit dropdown always lists
+// every base unit regardless of category, and picking one locks the category select to match.
+function populateBaseUnitOptions(selectEl, excludeUnitId, placeholder = 'None (this is a base unit)') {
+  const baseUnits = units.filter(u => u.base_unit_id === null && u.id !== excludeUnitId);
+  const selected = selectEl.value;
+  selectEl.innerHTML = `<option value="">${placeholder}</option>` +
+    baseUnits.map(u => `<option value="${u.id}">${u.name} (${u.category})</option>`).join('');
+  selectEl.value = selected;
+}
 
-  if (!category) {
-    select.innerHTML = '<option value="">Base unit (optional)</option>';
-    return;
+function syncCategoryFromBaseUnit(baseSelectEl, categorySelectEl) {
+  const baseId = baseSelectEl.value ? parseInt(baseSelectEl.value, 10) : null;
+  const baseUnit = baseId ? units.find(u => u.id === baseId) : null;
+
+  if (baseUnit) {
+    categorySelectEl.value = baseUnit.category;
+    categorySelectEl.disabled = true;
+  } else {
+    categorySelectEl.disabled = false;
   }
-
-  const baseUnits = units.filter(u => u.base_unit_id === null && u.category === category);
-  select.innerHTML = '<option value="">Base unit (optional)</option>' +
-    baseUnits.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
 }
 
 // Form handling
@@ -1735,6 +1748,11 @@ function openAddUnitModal(unitName, nameInput, idInput) {
   // Pre-fill unit name
   document.getElementById('modal-unit-name').value = unitName;
 
+  // Populate base-unit options fresh each time the modal opens, and make sure category starts
+  // enabled (it may have been left disabled by a base-unit selection from a previous open)
+  document.getElementById('modal-unit-category').disabled = false;
+  populateBaseUnitOptions(document.getElementById('modal-unit-base'), null);
+
   // Store reference to inputs so we can update them after creation
   modalTargetInputs = { nameInput, idInput };
 
@@ -1742,8 +1760,8 @@ function openAddUnitModal(unitName, nameInput, idInput) {
   modal.classList.add('show');
   modal.style.display = 'flex';
 
-  // Focus on category field
-  document.getElementById('modal-unit-category').focus();
+  // Focus on base unit field
+  document.getElementById('modal-unit-base').focus();
 }
 
 function closeAddUnitModal() {
@@ -1759,20 +1777,6 @@ function closeAddUnitModal() {
 
   // Clear target inputs reference
   modalTargetInputs = { nameInput: null, idInput: null };
-}
-
-function updateModalBaseUnitDropdown() {
-  const select = document.getElementById('modal-unit-base');
-  const category = document.getElementById('modal-unit-category').value;
-
-  if (!category) {
-    select.innerHTML = '<option value="">None (this is a base unit)</option>';
-    return;
-  }
-
-  const baseUnits = units.filter(u => u.base_unit_id === null && u.category === category);
-  select.innerHTML = '<option value="">None (this is a base unit)</option>' +
-    baseUnits.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
 }
 
 // Event listeners
@@ -1805,8 +1809,6 @@ document.getElementById('unit-form').addEventListener('submit', async (e) => {
   await addUnit();
 });
 
-// Update base unit dropdown when category changes
-document.getElementById('new-unit-category').addEventListener('change', updateBaseUnitDropdown);
 
 document.getElementById('reset-units-btn').addEventListener('click', resetUnitsToCommon);
 
@@ -1911,7 +1913,6 @@ document.getElementById('import-file').addEventListener('change', (e) => {
 });
 
 // Modal event listeners
-document.getElementById('modal-unit-category').addEventListener('change', updateModalBaseUnitDropdown);
 document.getElementById('add-unit-modal-form').addEventListener('submit', async (e) => {
   e.preventDefault();
 
