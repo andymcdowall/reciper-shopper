@@ -3,189 +3,206 @@
   "description": "Common units with natural conversions and ingredient-specific conversions",
   "units": [
     {
-      "name": "ml",
+      "name": "Milliliter (mL)",
       "category": "volume",
       "base_unit_name": null,
-      "to_base_factor": null
+      "to_base_factor": null,
+      "rounding_increment": null
     },
     {
-      "name": "l",
+      "name": "Liter (L)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 1000
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 1000,
+      "rounding_increment": null
     },
     {
-      "name": "tsp",
+      "name": "Teaspoon (tsp)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 4.92892
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 4.92892,
+      "rounding_increment": null
     },
     {
-      "name": "tbsp",
+      "name": "Tablespoon (tbsp)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 14.7868
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 14.7868,
+      "rounding_increment": 0.25
     },
     {
-      "name": "cup",
+      "name": "Cups (c)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 236.588
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 236.588,
+      "rounding_increment": null
     },
     {
-      "name": "fl oz",
+      "name": "Fluid Ounces (fl oz)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 29.5735
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 29.5735,
+      "rounding_increment": null
     },
     {
-      "name": "pint",
+      "name": "Pint (p)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 473.176
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 473.176,
+      "rounding_increment": null
     },
     {
-      "name": "quart",
+      "name": "Quart (qt)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 946.353
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 946.353,
+      "rounding_increment": null
     },
     {
-      "name": "gallon",
+      "name": "Gallons (G)",
       "category": "volume",
-      "base_unit_name": "ml",
-      "to_base_factor": 3785.41
+      "base_unit_name": "Milliliter (mL)",
+      "to_base_factor": 3785.41,
+      "rounding_increment": null
     },
     {
-      "name": "g",
+      "name": "Grams (g)",
       "category": "mass",
       "base_unit_name": null,
-      "to_base_factor": null
+      "to_base_factor": null,
+      "rounding_increment": 1
     },
     {
-      "name": "kg",
+      "name": "Kilograms (kg)",
       "category": "mass",
-      "base_unit_name": "g",
-      "to_base_factor": 1000
+      "base_unit_name": "Grams (g)",
+      "to_base_factor": 1000,
+      "rounding_increment": null
     },
     {
-      "name": "mg",
+      "name": "Milligrams (mg)",
       "category": "mass",
-      "base_unit_name": "g",
-      "to_base_factor": 0.001
+      "base_unit_name": "Grams (g)",
+      "to_base_factor": 0.001,
+      "rounding_increment": 1
     },
     {
-      "name": "oz",
+      "name": "Ounces (oz)",
       "category": "mass",
-      "base_unit_name": "g",
-      "to_base_factor": 28.3495
+      "base_unit_name": "Grams (g)",
+      "to_base_factor": 28.3495,
+      "rounding_increment": null
     },
     {
-      "name": "lb",
+      "name": "Pounds (lb)",
       "category": "mass",
-      "base_unit_name": "g",
-      "to_base_factor": 453.592
+      "base_unit_name": "Grams (g)",
+      "to_base_factor": 453.592,
+      "rounding_increment": null
     },
     {
-      "name": "cm",
+      "name": "Centimeter (cm)",
       "category": "length",
       "base_unit_name": null,
-      "to_base_factor": null
+      "to_base_factor": null,
+      "rounding_increment": null
     },
     {
       "name": "x",
       "category": "count",
       "base_unit_name": null,
-      "to_base_factor": null
+      "to_base_factor": null,
+      "rounding_increment": 1
     },
     {
-      "name": "dozen",
+      "name": "Dozen (dz)",
       "category": "count",
       "base_unit_name": "x",
-      "to_base_factor": 12
+      "to_base_factor": 12,
+      "rounding_increment": 0.5
     }
   ],
   "ingredients": [
     {
       "name": "water",
-      "preferred_unit_name": "ml"
+      "preferred_unit_name": "Milliliter (mL)"
     },
     {
       "name": "all-purpose flour",
-      "preferred_unit_name": "g"
+      "preferred_unit_name": "Grams (g)"
     },
     {
       "name": "granulated sugar",
-      "preferred_unit_name": "g"
+      "preferred_unit_name": "Grams (g)"
     },
     {
       "name": "butter",
-      "preferred_unit_name": "g"
+      "preferred_unit_name": "Grams (g)"
     },
     {
       "name": "honey",
-      "preferred_unit_name": "ml"
+      "preferred_unit_name": "Milliliter (mL)"
     }
   ],
   "ingredient_conversions": [
     {
       "ingredient_name": "water",
-      "from_unit_name": "ml",
-      "to_unit_name": "g",
+      "from_unit_name": "Milliliter (mL)",
+      "to_unit_name": "Grams (g)",
       "factor": 1
     },
     {
       "ingredient_name": "water",
-      "from_unit_name": "g",
-      "to_unit_name": "ml",
+      "from_unit_name": "Grams (g)",
+      "to_unit_name": "Milliliter (mL)",
       "factor": 1
     },
     {
       "ingredient_name": "all-purpose flour",
-      "from_unit_name": "ml",
-      "to_unit_name": "g",
+      "from_unit_name": "Milliliter (mL)",
+      "to_unit_name": "Grams (g)",
       "factor": 0.593
     },
     {
       "ingredient_name": "all-purpose flour",
-      "from_unit_name": "g",
-      "to_unit_name": "ml",
+      "from_unit_name": "Grams (g)",
+      "to_unit_name": "Milliliter (mL)",
       "factor": 1.686341
     },
     {
       "ingredient_name": "granulated sugar",
-      "from_unit_name": "ml",
-      "to_unit_name": "g",
+      "from_unit_name": "Milliliter (mL)",
+      "to_unit_name": "Grams (g)",
       "factor": 0.845
     },
     {
       "ingredient_name": "granulated sugar",
-      "from_unit_name": "g",
-      "to_unit_name": "ml",
+      "from_unit_name": "Grams (g)",
+      "to_unit_name": "Milliliter (mL)",
       "factor": 1.183432
     },
     {
       "ingredient_name": "butter",
-      "from_unit_name": "ml",
-      "to_unit_name": "g",
+      "from_unit_name": "Milliliter (mL)",
+      "to_unit_name": "Grams (g)",
       "factor": 0.911
     },
     {
       "ingredient_name": "butter",
-      "from_unit_name": "g",
-      "to_unit_name": "ml",
+      "from_unit_name": "Grams (g)",
+      "to_unit_name": "Milliliter (mL)",
       "factor": 1.097695
     },
     {
       "ingredient_name": "honey",
-      "from_unit_name": "ml",
-      "to_unit_name": "g",
+      "from_unit_name": "Milliliter (mL)",
+      "to_unit_name": "Grams (g)",
       "factor": 1.42
     },
     {
       "ingredient_name": "honey",
-      "from_unit_name": "g",
-      "to_unit_name": "ml",
+      "from_unit_name": "Grams (g)",
+      "to_unit_name": "Milliliter (mL)",
       "factor": 0.704225
     }
   ],

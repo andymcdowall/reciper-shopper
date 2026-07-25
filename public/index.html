@@ -15,10 +15,17 @@
         <button id="nav-add-recipe" class="nav-btn">Add Recipe</button>
         <button id="nav-ingredients" class="nav-btn">Ingredients</button>
         <button id="nav-units" class="nav-btn">Units</button>
+        <button id="nav-stores" class="nav-btn">Stores</button>
         <button id="nav-cart" class="nav-btn">Cart <span id="cart-count" class="badge">0</span></button>
         <button id="nav-shopping-list" class="nav-btn">Shopping List</button>
         <button id="nav-export-import" class="nav-btn">Export/Import</button>
       </nav>
+      <div class="store-selector">
+        <label for="global-store-select">Store:</label>
+        <select id="global-store-select">
+          <option value="">None selected</option>
+        </select>
+      </div>
     </header>
 
     <main>
@@ -30,7 +37,7 @@
 
       <!-- Add Recipe View -->
       <section id="add-recipe-view" class="view">
-        <h2>Add Recipe</h2>
+        <h2 id="add-recipe-heading">Add Recipe</h2>
         <form id="recipe-form">
           <div class="form-group">
             <label for="recipe-name">Recipe Name *</label>
@@ -73,7 +80,7 @@
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn-primary">Save Recipe</button>
+            <button type="submit" id="save-recipe-btn" class="btn-primary">Save Recipe</button>
             <button type="button" id="cancel-recipe-btn" class="btn-secondary">Cancel</button>
           </div>
         </form>
@@ -100,6 +107,9 @@
         <div class="unit-add-section">
           <form id="unit-form" class="unit-add-form">
             <input type="text" id="new-unit-name" placeholder="Unit name..." required>
+            <select id="new-unit-base" onchange="syncCategoryFromBaseUnit(this, document.getElementById('new-unit-category'))">
+              <option value="">None (this is a base unit)</option>
+            </select>
             <select id="new-unit-category" required>
               <option value="">Select category...</option>
               <option value="volume">Volume</option>
@@ -107,16 +117,40 @@
               <option value="length">Length</option>
               <option value="count">Count</option>
             </select>
-            <select id="new-unit-base">
-              <option value="">Base unit (optional)</option>
-            </select>
             <input type="number" id="new-unit-factor" placeholder="Conversion factor" step="0.000001">
             <input type="number" id="new-unit-rounding" placeholder="Rounding (e.g. 0.25, 1)" step="0.000001" min="0">
             <button type="submit" class="btn-primary">Add Unit</button>
           </form>
+          <p class="unit-category-hint">Category is set automatically from the base unit you pick. Only choose a category yourself when creating a new base unit (leave "Base unit" as None).</p>
+        </div>
+
+        <div class="unit-reset-section">
+          <button type="button" id="reset-units-btn" class="btn-danger">Reset to Common Units</button>
+          <p class="unit-reset-hint">Deletes any unit not currently used by a recipe or a price, then adds the standard common units. Units still in use are kept.</p>
+          <div id="reset-units-result"></div>
         </div>
 
         <div id="units-grid" class="units-grid"></div>
+      </section>
+
+      <!-- Stores View -->
+      <section id="stores-view" class="view">
+        <h2>Stores</h2>
+
+        <div class="store-add-section">
+          <form id="store-form" class="ingredient-add-form">
+            <input type="text" id="new-store-name" placeholder="Add new store..." required>
+            <button type="submit" class="btn-primary">Add</button>
+          </form>
+        </div>
+
+        <div class="cost-settings">
+          <label for="staleness-days-input">Flag prices older than (days):</label>
+          <input type="number" id="staleness-days-input" min="1" step="1">
+          <button type="button" id="save-staleness-btn" class="btn-secondary btn-small">Save</button>
+        </div>
+
+        <div id="stores-grid" class="ingredients-grid"></div>
       </section>
 
       <!-- Cart View -->
@@ -128,6 +162,22 @@
       <!-- Shopping List View -->
       <section id="shopping-list-view" class="view">
         <h2>Shopping List</h2>
+
+        <div class="list-add-section">
+          <form id="manual-list-form" class="ingredient-row">
+            <div class="ingredient-name-container">
+              <input type="text" class="ingredient-name" id="manual-item-name" placeholder="Add an ingredient directly..." required autocomplete="off">
+            </div>
+            <input type="hidden" class="ingredient-id" id="manual-item-ingredient-id">
+            <input type="number" class="ingredient-quantity" id="manual-item-quantity" placeholder="Qty" step="0.01" required>
+            <div class="unit-container">
+              <input type="text" class="unit-name" id="manual-item-unit-name" placeholder="Unit" required autocomplete="off">
+            </div>
+            <input type="hidden" class="unit-id" id="manual-item-unit-id">
+            <button type="submit" class="btn-primary">Add to List</button>
+          </form>
+        </div>
+
         <div id="shopping-list-items"></div>
       </section>
 
@@ -174,6 +224,24 @@
     </main>
   </div>
 
+  <!-- Recipe Detail Modal -->
+  <div id="recipe-detail-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="recipe-detail-name"></h3>
+        <button class="modal-close" onclick="closeRecipeDetailModal()">&times;</button>
+      </div>
+      <div id="recipe-detail-meta" class="recipe-meta"></div>
+      <div id="recipe-detail-ingredients"></div>
+      <div id="recipe-detail-instructions"></div>
+      <div id="recipe-detail-cost"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-primary" onclick="editRecipe(currentDetailRecipeId)">Edit</button>
+        <button type="button" class="btn-secondary" onclick="closeRecipeDetailModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Unit Modal -->
   <div id="add-unit-modal" class="modal">
     <div class="modal-content">
@@ -187,6 +255,12 @@
           <input type="text" id="modal-unit-name" required>
         </div>
         <div class="form-group">
+          <label for="modal-unit-base">Base Unit (optional)</label>
+          <select id="modal-unit-base" onchange="syncCategoryFromBaseUnit(this, document.getElementById('modal-unit-category'))">
+            <option value="">None (this is a base unit)</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label for="modal-unit-category">Category *</label>
           <select id="modal-unit-category" required>
             <option value="">Select category...</option>
@@ -195,12 +269,7 @@
             <option value="length">Length</option>
             <option value="count">Count</option>
           </select>
-        </div>
-        <div class="form-group">
-          <label for="modal-unit-base">Base Unit (optional)</label>
-          <select id="modal-unit-base">
-            <option value="">None (this is a base unit)</option>
-          </select>
+          <p class="unit-category-hint">Set automatically from the base unit above, unless this is a new base unit itself.</p>
         </div>
         <div class="form-group">
           <label for="modal-unit-factor">Conversion Factor</label>

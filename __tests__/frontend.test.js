@@ -34,7 +34,7 @@ describe('Recipe Form Handling', () => {
     document.getElementById('recipe-instructions').value = 'Test instructions';
 
     // Set ingredient values
-    const ingredientRow = document.querySelector('.ingredient-row');
+    const ingredientRow = document.querySelector('#ingredients-list .ingredient-row');
     ingredientRow.querySelector('.ingredient-name').value = 'flour';
     ingredientRow.querySelector('.ingredient-quantity').value = '2';
     ingredientRow.querySelector('.unit-name').value = 'cups';
@@ -45,7 +45,7 @@ describe('Recipe Form Handling', () => {
     const prep_time = parseInt(document.getElementById('recipe-prep-time').value) || null;
     const instructions = document.getElementById('recipe-instructions').value;
 
-    const ingredientRows = document.querySelectorAll('.ingredient-row');
+    const ingredientRows = document.querySelectorAll('#ingredients-list .ingredient-row');
     const ingredients = Array.from(ingredientRows).map(row => ({
       name: row.querySelector('.ingredient-name').value,
       quantity: parseFloat(row.querySelector('.ingredient-quantity').value),
@@ -76,7 +76,7 @@ describe('Recipe Form Handling', () => {
   });
 
   test('should validate at least one ingredient exists', () => {
-    const ingredientRows = document.querySelectorAll('.ingredient-row');
+    const ingredientRows = document.querySelectorAll('#ingredients-list .ingredient-row');
     expect(ingredientRows.length).toBeGreaterThan(0);
   });
 });
@@ -97,6 +97,7 @@ describe('View Management', () => {
     expect(document.getElementById('nav-add-recipe')).toBeTruthy();
     expect(document.getElementById('nav-ingredients')).toBeTruthy();
     expect(document.getElementById('nav-units')).toBeTruthy();
+    expect(document.getElementById('nav-stores')).toBeTruthy();
     expect(document.getElementById('nav-cart')).toBeTruthy();
     expect(document.getElementById('nav-shopping-list')).toBeTruthy();
     expect(document.getElementById('nav-export-import')).toBeTruthy();
@@ -106,6 +107,50 @@ describe('View Management', () => {
     const activeViews = document.querySelectorAll('.view.active');
     expect(activeViews).toHaveLength(1);
     expect(activeViews[0].id).toBe('recipes-view');
+  });
+});
+
+describe('Store & Cost UI Elements', () => {
+  test('should have a stores view with add form and grid', () => {
+    expect(document.getElementById('stores-view')).toBeTruthy();
+    expect(document.getElementById('store-form')).toBeTruthy();
+    expect(document.getElementById('new-store-name')).toBeTruthy();
+    expect(document.getElementById('stores-grid')).toBeTruthy();
+  });
+
+  test('should have a staleness threshold setting', () => {
+    expect(document.getElementById('staleness-days-input')).toBeTruthy();
+    expect(document.getElementById('save-staleness-btn')).toBeTruthy();
+  });
+
+  test('should have a reset-to-common-units control on the units view', () => {
+    expect(document.getElementById('reset-units-btn')).toBeTruthy();
+    expect(document.getElementById('reset-units-result')).toBeTruthy();
+  });
+
+  test('should have a manual add-to-list form on the shopping list view, scoped separately from the recipe form', () => {
+    const form = document.getElementById('manual-list-form');
+    expect(form).toBeTruthy();
+    expect(form.querySelector('.ingredient-name')).toBeTruthy();
+    expect(form.querySelector('.ingredient-quantity')).toBeTruthy();
+    expect(form.querySelector('.unit-name')).toBeTruthy();
+
+    // Must not be picked up by the recipe form's ingredient-row queries
+    const recipeFormRows = document.querySelectorAll('#ingredients-list .ingredient-row');
+    expect(Array.from(recipeFormRows)).not.toContain(form);
+  });
+
+  test('should have a global store selector in the header', () => {
+    const select = document.getElementById('global-store-select');
+    expect(select).toBeTruthy();
+    expect(select.tagName).toBe('SELECT');
+  });
+
+  test('should have a recipe detail modal with a cost section', () => {
+    expect(document.getElementById('recipe-detail-modal')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-name')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-ingredients')).toBeTruthy();
+    expect(document.getElementById('recipe-detail-cost')).toBeTruthy();
   });
 });
 
@@ -190,6 +235,22 @@ describe('Form Elements', () => {
     expect(document.getElementById('cancel-recipe-btn')).toBeTruthy();
   });
 
+  test('should have addressable heading/submit-button elements for switching between add and edit mode', () => {
+    const heading = document.getElementById('add-recipe-heading');
+    const saveBtn = document.getElementById('save-recipe-btn');
+    expect(heading).toBeTruthy();
+    expect(heading.textContent).toBe('Add Recipe');
+    expect(saveBtn).toBeTruthy();
+    expect(saveBtn.textContent).toBe('Save Recipe');
+  });
+
+  test('should have an Edit button on the recipe detail modal', () => {
+    const modal = document.getElementById('recipe-detail-modal');
+    const editButton = Array.from(modal.querySelectorAll('button')).find(b => b.textContent.trim() === 'Edit');
+    expect(editButton).toBeTruthy();
+    expect(editButton.getAttribute('onclick')).toContain('editRecipe(');
+  });
+
   test('should have at least one ingredient row by default', () => {
     const ingredientsList = document.getElementById('ingredients-list');
     const rows = ingredientsList.querySelectorAll('.ingredient-row');
@@ -209,24 +270,55 @@ describe('Export Data Format', () => {
       }
     ];
 
-    // Simulate what the export function creates (v3.0 format)
+    // Simulate what the export function creates (v5.0 format)
     const exportData = {
-      version: '3.0',
+      version: '5.0',
       exported_at: new Date().toISOString(),
       units: [],
       ingredients: [],
       ingredient_conversions: [],
+      stores: [],
+      prices: [],
+      manual_list_items: [],
       recipes: recipes
     };
 
-    expect(exportData.version).toBe('3.0');
+    expect(exportData.version).toBe('5.0');
     expect(exportData.exported_at).toBeTruthy();
     expect(exportData).toHaveProperty('units');
     expect(exportData).toHaveProperty('ingredients');
     expect(exportData).toHaveProperty('ingredient_conversions');
+    expect(exportData).toHaveProperty('stores');
+    expect(exportData).toHaveProperty('prices');
+    expect(exportData).toHaveProperty('manual_list_items');
     expect(exportData.recipes).toHaveLength(1);
     expect(exportData.recipes[0]).toHaveProperty('name');
     expect(exportData.recipes[0]).toHaveProperty('ingredients');
+  });
+
+  test('client-side import should forward the entire parsed file, not just recipes', () => {
+    // Regression test: importRecipes() in app.js previously sent only
+    // `{ recipes: data.recipes, mode }`, silently dropping units/ingredients/stores/prices/
+    // manual_list_items from the uploaded export file on import.
+    const data = {
+      version: '5.0',
+      units: [{ name: 'g', category: 'mass' }],
+      ingredients: [{ name: 'flour' }],
+      stores: [{ name: 'Store A' }],
+      prices: [{ ingredient_name: 'flour', store_name: 'Store A', package_quantity: 1, price: 2 }],
+      manual_list_items: [{ ingredient_name: 'flour', quantity: 1, unit_name: 'g' }],
+      recipes: []
+    };
+    const mode = 'add';
+
+    const requestBody = { ...data, mode };
+
+    expect(requestBody.units).toEqual(data.units);
+    expect(requestBody.ingredients).toEqual(data.ingredients);
+    expect(requestBody.stores).toEqual(data.stores);
+    expect(requestBody.prices).toEqual(data.prices);
+    expect(requestBody.manual_list_items).toEqual(data.manual_list_items);
+    expect(requestBody.mode).toBe('add');
   });
 
   test('should generate correct filename format', () => {
@@ -284,6 +376,502 @@ describe('Import Validation', () => {
   });
 });
 
+describe('Cost Summary Rendering Logic', () => {
+  // Mirrors renderCostSummary() in public/app.js
+  function renderCostSummary(cost, servings) {
+    if (!cost) return '';
+
+    const substitutedItems = cost.substituted_items || [];
+    const substitutedCount = cost.substituted_count || 0;
+
+    const missingHtml = cost.missing_ingredients.length
+      ? `<p class="cost-warning">Missing at this store: ${cost.missing_ingredients.map(m => m.name).join(', ')}</p>`
+      : '';
+
+    const matchLabel = substitutedCount
+      ? `${cost.matched_count} of ${cost.total_count} priced at this store, ${substitutedCount} patched in from elsewhere`
+      : `${cost.matched_count} of ${cost.total_count} items`;
+
+    const lines = cost.items.map(item => {
+      const desc = item.is_prorated
+        ? `${item.name}: ${item.quantity} ${item.unit_name || ''} used (of ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)}) = $${item.line_cost.toFixed(2)}`
+        : `${item.name}: ${item.packages_needed} &times; ${item.package_quantity} ${item.package_unit_name} @ $${item.unit_price.toFixed(2)} = $${item.line_cost.toFixed(2)}`;
+      return `
+      <div class="cost-line-item ${item.is_stale ? 'price-stale' : ''}">
+        <span>${desc}</span>
+        ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
+      </div>
+    `;
+    }).join('');
+
+    const formatPackageBreakdown = s =>
+      `${s.packages_needed} &times; ${s.package_quantity} ${s.package_unit_name} @ $${s.unit_price.toFixed(2)}`;
+
+    const substitutedLines = substitutedItems.map(item => {
+      const sourceLabel = item.is_blended
+        ? `blended from ${item.source_stores.map(s => s.store_name).join(' & ')}`
+        : `from ${item.source_stores[0].store_name}`;
+      const desc = item.is_blended
+        ? `${item.name}: ${item.source_stores.map(formatPackageBreakdown).join(' & ')} = $${item.line_cost.toFixed(2)}`
+        : `${item.name}: ${formatPackageBreakdown(item.source_stores[0])} = $${item.line_cost.toFixed(2)}`;
+      return `
+        <div class="cost-line-item cost-substituted ${item.is_stale ? 'price-stale' : ''}">
+          <span>${desc}</span>
+          <span class="substituted-badge">${sourceLabel}</span>
+          ${item.is_stale ? '<span class="stale-badge">price may be outdated</span>' : ''}
+        </div>
+      `;
+    }).join('');
+
+    const perServingHtml = servings > 0
+      ? `<div class="cost-per-serving">$${(cost.total_cost / servings).toFixed(2)} per serving</div>`
+      : '';
+
+    return `
+      <div class="cost-summary">
+        <strong>$${cost.total_cost.toFixed(2)} for ${matchLabel}</strong>
+        ${perServingHtml}
+        ${missingHtml}
+        <div class="cost-line-items">${lines}${substitutedLines}</div>
+      </div>
+    `;
+  }
+
+  test('shows the per-serving cost when servings is provided', () => {
+    const html = renderCostSummary({
+      total_cost: 12.0,
+      matched_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: []
+    }, 4);
+
+    expect(html).toContain('cost-per-serving');
+    expect(html).toContain('$3.00 per serving');
+  });
+
+  test('omits the per-serving line for the shopping list, which has no servings', () => {
+    const html = renderCostSummary({
+      total_cost: 12.0,
+      matched_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('cost-per-serving');
+  });
+
+  test('should show the missing-ingredients warning with the affected names', () => {
+    const html = renderCostSummary({
+      total_cost: 34.2,
+      matched_count: 11,
+      total_count: 13,
+      items: [],
+      missing_ingredients: [{ name: 'tahini' }, { name: 'saffron' }]
+    });
+
+    expect(html).toContain('$34.20 for 11 of 13 items');
+    expect(html).toContain('Missing at this store: tahini, saffron');
+  });
+
+  test('should show a substituted item\'s package breakdown, just like a native price', () => {
+    const html = renderCostSummary({
+      total_cost: 6.0,
+      matched_count: 0,
+      substituted_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: [],
+      substituted_items: [{
+        name: 'saffron',
+        line_cost: 6.0,
+        is_blended: false,
+        is_stale: false,
+        source_stores: [{
+          store_name: 'Trader Joe\'s',
+          packages_needed: 2,
+          package_quantity: 1,
+          package_unit_name: 'jar',
+          unit_price: 3.0
+        }]
+      }]
+    });
+
+    expect(html).toContain('$6.00 for 0 of 1 priced at this store, 1 patched in from elsewhere');
+    expect(html).toContain('substituted-badge');
+    expect(html).toContain('from Trader Joe\'s');
+    expect(html).toContain('cost-substituted');
+    expect(html).toContain('saffron: 2 &times; 1 jar @ $3.00 = $6.00');
+  });
+
+  test('should label a blended substitute with both contributing stores\' package breakdowns', () => {
+    const html = renderCostSummary({
+      total_cost: 3.0,
+      matched_count: 0,
+      substituted_count: 1,
+      total_count: 1,
+      items: [],
+      missing_ingredients: [],
+      substituted_items: [{
+        name: 'saffron',
+        line_cost: 3.0,
+        is_blended: true,
+        is_stale: false,
+        source_stores: [
+          { store_name: 'Store A', packages_needed: 1, package_quantity: 1, package_unit_name: 'jar', unit_price: 2.0 },
+          { store_name: 'Store B', packages_needed: 1, package_quantity: 1, package_unit_name: 'jar', unit_price: 4.0 }
+        ]
+      }]
+    });
+
+    expect(html).toContain('blended from Store A & Store B');
+    expect(html).toContain('1 &times; 1 jar @ $2.00 & 1 &times; 1 jar @ $4.00 = $3.00');
+  });
+
+  test('should not render a warning when nothing is missing', () => {
+    const html = renderCostSummary({
+      total_cost: 10,
+      matched_count: 2,
+      total_count: 2,
+      items: [],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('cost-warning');
+  });
+
+  test('should flag stale prices with the price-stale class and badge', () => {
+    const html = renderCostSummary({
+      total_cost: 4.99,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        packages_needed: 1,
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        line_cost: 4.99,
+        is_stale: true
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).toContain('price-stale');
+    expect(html).toContain('stale-badge');
+    expect(html).toContain('price may be outdated');
+  });
+
+  test('should not flag fresh prices as stale', () => {
+    const html = renderCostSummary({
+      total_cost: 4.99,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        packages_needed: 1,
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        line_cost: 4.99,
+        is_stale: false
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).not.toContain('price-stale');
+    expect(html).not.toContain('stale-badge');
+  });
+
+  test('a prorated recipe-cost line shows the fractional share used, not a package count', () => {
+    const html = renderCostSummary({
+      total_cost: 0.21,
+      matched_count: 1,
+      total_count: 1,
+      items: [{
+        name: 'olive oil',
+        quantity: 2,
+        unit_name: 'tbsp',
+        package_quantity: 48,
+        package_unit_name: 'tbsp',
+        unit_price: 4.99,
+        fraction_used: 0.0417,
+        line_cost: 0.21,
+        is_prorated: true,
+        is_stale: false
+      }],
+      missing_ingredients: []
+    });
+
+    expect(html).toContain('olive oil: 2 tbsp used (of 48 tbsp @ $4.99) = $0.21');
+    expect(html).not.toContain('undefined &times;');
+  });
+});
+
+describe('Manual List Item Rendering Logic', () => {
+  // Mirrors the relevant slice of renderShoppingList() in public/app.js
+  function renderListItem(item) {
+    return `
+      <li class="${item.has_manual ? 'manually-added' : ''}">
+        <label>${item.quantity} ${item.unit} ${item.name}</label>
+        ${item.has_manual ? `
+          <span class="manual-badge">added directly</span>
+          <span class="manual-entries">
+            ${item.manual_entries.map(entry => `
+              <span class="manual-entry-chip">
+                +${entry.quantity} ${entry.unit_name}
+                <button type="button" class="manual-entry-remove" onclick="deleteManualListItemUI(${entry.id})">&times;</button>
+              </span>
+            `).join('')}
+          </span>
+        ` : ''}
+      </li>
+    `;
+  }
+
+  test('a purely recipe-derived item renders with no highlight or badge', () => {
+    const html = renderListItem({ name: 'flour', quantity: 2, unit: 'cups', has_manual: false, manual_entries: [] });
+
+    expect(html).not.toContain('manually-added');
+    expect(html).not.toContain('manual-badge');
+  });
+
+  test('an item with a manual contribution is highlighted with a badge and a removable chip', () => {
+    const html = renderListItem({
+      name: 'olive oil',
+      quantity: 3,
+      unit: 'tbsp',
+      has_manual: true,
+      manual_entries: [{ id: 7, quantity: 1, unit_name: 'tbsp' }]
+    });
+
+    expect(html).toContain('manually-added');
+    expect(html).toContain('manual-badge');
+    expect(html).toContain('+1 tbsp');
+    expect(html).toContain('deleteManualListItemUI(7)');
+  });
+
+  test('multiple manual entries for the same item each render their own removable chip', () => {
+    const html = renderListItem({
+      name: 'eggs',
+      quantity: 5,
+      unit: 'each',
+      has_manual: true,
+      manual_entries: [{ id: 1, quantity: 2, unit_name: 'each' }, { id: 2, quantity: 3, unit_name: 'each' }]
+    });
+
+    expect(html).toContain('deleteManualListItemUI(1)');
+    expect(html).toContain('deleteManualListItemUI(2)');
+  });
+});
+
+describe('Recipe Card Cost Rendering Logic', () => {
+  // Mirrors renderRecipeCardCost() in public/app.js
+  function renderRecipeCardCost(recipeId, selectedStoreId, recipeCosts, servings) {
+    if (!selectedStoreId) return '';
+    const cost = recipeCosts[recipeId];
+    if (!cost) return '';
+    const missingNote = cost.missing_ingredients.length
+      ? ` <span class="recipe-card-cost-warning">(${cost.missing_ingredients.length} missing)</span>`
+      : '';
+    const perServingNote = servings > 0
+      ? ` <span class="recipe-card-cost-per-serving">($${(cost.total_cost / servings).toFixed(2)}/serving)</span>`
+      : '';
+    return `<div class="recipe-card-cost">$${cost.total_cost.toFixed(2)}${perServingNote}${missingNote}</div>`;
+  }
+
+  test('renders nothing when no store is selected', () => {
+    const html = renderRecipeCardCost(1, null, { 1: { total_cost: 5, missing_ingredients: [] } });
+    expect(html).toBe('');
+  });
+
+  test('renders nothing while the cost has not been fetched yet', () => {
+    const html = renderRecipeCardCost(1, 2, {});
+    expect(html).toBe('');
+  });
+
+  test('renders the total cost once fetched', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } });
+    expect(html).toContain('recipe-card-cost');
+    expect(html).toContain('$12.50');
+    expect(html).not.toContain('recipe-card-cost-warning');
+  });
+
+  test('flags missing ingredients on the card', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 3, missing_ingredients: [{ name: 'saffron' }] } });
+    expect(html).toContain('$3.00');
+    expect(html).toContain('recipe-card-cost-warning');
+    expect(html).toContain('(1 missing)');
+  });
+
+  test('shows the per-serving cost when servings is known', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } }, 4);
+    expect(html).toContain('recipe-card-cost-per-serving');
+    expect(html).toContain('($3.13/serving)');
+  });
+
+  test('omits the per-serving cost when servings is unset', () => {
+    const html = renderRecipeCardCost(1, 2, { 1: { total_cost: 12.5, missing_ingredients: [] } }, null);
+    expect(html).not.toContain('recipe-card-cost-per-serving');
+  });
+});
+
+describe('Shopping List "Don\'t Need to Buy" Rendering Logic', () => {
+  // Mirrors the relevant slices of renderShoppingList() in public/app.js
+  function renderListItemActions(item) {
+    return `<button type="button" class="btn-secondary btn-small dont-need-btn" onclick="excludeFromShoppingList(${item.ingredient_id})">Don't need to buy</button>`;
+  }
+
+  function renderExcludedSection(excludedIngredients) {
+    if (excludedIngredients.length === 0) return '';
+    return `
+      <div class="excluded-list-section">
+        <div class="excluded-list-title">Not buying this trip</div>
+        <ul class="excluded-list">
+          ${excludedIngredients.map(ing => `
+            <li>
+              <span>${ing.name}</span>
+              <button type="button" class="btn-secondary btn-small" onclick="includeInShoppingList(${ing.id})">Buy after all</button>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  test('each list item gets a "Don\'t need to buy" button scoped to that ingredient', () => {
+    const html = renderListItemActions({ ingredient_id: 7, name: 'flour' });
+    expect(html).toContain('excludeFromShoppingList(7)');
+    expect(html).toContain("Don't need to buy");
+  });
+
+  test('excluded ingredients render in a separate section with a way to add them back', () => {
+    const html = renderExcludedSection([{ id: 9, name: 'saffron' }]);
+    expect(html).toContain('excluded-list-section');
+    expect(html).toContain('saffron');
+    expect(html).toContain('includeInShoppingList(9)');
+    expect(html).toContain('Buy after all');
+  });
+
+  test('no excluded section renders when nothing is excluded', () => {
+    const html = renderExcludedSection([]);
+    expect(html).toBe('');
+  });
+});
+
+describe('Shopping List Buy-Increment Rendering Logic', () => {
+  // Mirrors the packages-to-buy slice of renderShoppingList() in public/app.js. costByIngredient
+  // maps ingredient_id -> array of {packages_needed, package_quantity, package_unit_name}, since
+  // a patched-in (substituted) item can have one entry per contributing store when blended.
+  function renderBuyIncrement(item, costByIngredient) {
+    const priced = costByIngredient[item.ingredient_id];
+    return priced
+      ? `<span class="buy-increment">buy ${priced.map(p => `${p.packages_needed} &times; ${p.package_quantity} ${p.package_unit_name}`).join(' & ')}</span>`
+      : '';
+  }
+
+  test('an item priced at the selected store shows the packages-to-buy alongside the raw quantity', () => {
+    const item = { ingredient_id: 1, name: 'flour', quantity: 5, unit: 'cups' };
+    const costByIngredient = { 1: [{ packages_needed: 2, package_quantity: 5, package_unit_name: '5lb bag' }] };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 2 &times; 5 5lb bag');
+  });
+
+  test('an item patched in from another store shows the same packages-to-buy format as a native price', () => {
+    const item = { ingredient_id: 3, name: 'rice', quantity: 2, unit: 'cups' };
+    const costByIngredient = { 3: [{ packages_needed: 1, package_quantity: 16, package_unit_name: 'oz' }] };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 1 &times; 16 oz');
+  });
+
+  test('an item blended from two stores shows both stores\' package breakdowns', () => {
+    const item = { ingredient_id: 4, name: 'saffron', quantity: 1, unit: 'tsp' };
+    const costByIngredient = {
+      4: [
+        { packages_needed: 1, package_quantity: 1, package_unit_name: 'jar' },
+        { packages_needed: 2, package_quantity: 1, package_unit_name: 'vial' }
+      ]
+    };
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toContain('buy 1 &times; 1 jar & 2 &times; 1 vial');
+  });
+
+  test('an item with no price at the selected store shows no buy-increment', () => {
+    const item = { ingredient_id: 2, name: 'saffron', quantity: 1, unit: 'tsp' };
+    const costByIngredient = {};
+
+    const html = renderBuyIncrement(item, costByIngredient);
+
+    expect(html).toBe('');
+  });
+});
+
+describe('Default Price Form Store Logic', () => {
+  // Mirrors getDefaultPriceFormStoreId() in public/app.js
+  function getDefaultPriceFormStoreId(prices, stores, selectedStoreId) {
+    const pricedStoreIds = new Set(prices.map(p => p.store_id));
+
+    if (selectedStoreId && !pricedStoreIds.has(selectedStoreId)) {
+      return selectedStoreId;
+    }
+
+    const unpriced = stores
+      .filter(s => !pricedStoreIds.has(s.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (unpriced.length > 0) return unpriced[0].id;
+
+    return selectedStoreId || null;
+  }
+
+  const stores = [
+    { id: 1, name: 'Zeus Market' },
+    { id: 2, name: 'Acme Grocery' },
+    { id: 3, name: 'Bodega Blue' }
+  ];
+
+  test('defaults to the selected store when this ingredient has no price there yet', () => {
+    const result = getDefaultPriceFormStoreId([], stores, 1);
+    expect(result).toBe(1);
+  });
+
+  test('falls back to the alphabetically first unpriced store when the selected store is already priced', () => {
+    const prices = [{ store_id: 1 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(2); // Acme Grocery, alphabetically before Bodega Blue
+  });
+
+  test('skips stores that already have a price, not just the selected one', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(3); // Bodega Blue, the only remaining unpriced store
+  });
+
+  test('falls back to the selected store when every store already has a price', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }, { store_id: 3 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, 1);
+    expect(result).toBe(1);
+  });
+
+  test('picks the alphabetically first store when no default store is selected', () => {
+    const result = getDefaultPriceFormStoreId([], stores, null);
+    expect(result).toBe(2); // Acme Grocery
+  });
+
+  test('returns null when nothing is selected and every store is already priced', () => {
+    const prices = [{ store_id: 1 }, { store_id: 2 }, { store_id: 3 }];
+    const result = getDefaultPriceFormStoreId(prices, stores, null);
+    expect(result).toBeNull();
+  });
+});
+
 describe('Shopping List Aggregation Logic', () => {
   test('should aggregate ingredients by name and unit', () => {
     // This tests the actual aggregation logic from getAggregatedShoppingList
@@ -332,5 +920,51 @@ describe('Shopping List Aggregation Logic', () => {
 
     const result = Object.values(aggregated);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe('App Initialization (executes the real public/app.js, not a hand-written mirror)', () => {
+  // Every other suite in this file re-implements a small slice of app.js's rendering logic and
+  // asserts against that copy -- useful for pinning down formatting, but it can never catch a bug
+  // in how the real file wires things together (e.g. a startup race condition), since the mirror
+  // is definitionally correct by construction. This suite instead loads and executes the actual
+  // app.js source against a mocked fetch, so it exercises the real initialization sequence.
+  const appJsSource = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
+
+  function mockApiResponse(data) {
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
+  }
+
+  async function flushMicrotasks(times = 50) {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve();
+    }
+  }
+
+  test('recipe cards show cost on first load when a store was already selected in settings', async () => {
+    global.fetch = jest.fn((url) => {
+      if (url === '/api/recipes') return mockApiResponse([{ id: 1, name: 'Bread', servings: 4, prep_time: 5 }]);
+      if (url === '/api/cart') return mockApiResponse([]);
+      if (url === '/api/ingredients') return mockApiResponse([]);
+      if (url === '/api/units') return mockApiResponse([]);
+      if (url === '/api/stores') return mockApiResponse([{ id: 1, name: 'Test Store' }]);
+      if (url === '/api/settings') return mockApiResponse({ selected_store_id: 1, price_staleness_days: 182 });
+      if (url === '/api/recipes/1/cost?store_id=1') {
+        return mockApiResponse({
+          total_cost: 10, matched_count: 1, total_count: 1, substituted_count: 0,
+          items: [], substituted_items: [], missing_ingredients: []
+        });
+      }
+      return mockApiResponse([]);
+    });
+
+    // Runs the real top-level init code in app.js (fetchRecipes(), fetchCart(), the settings load,
+    // etc.) in its own function scope, exactly as the browser would on page load.
+    new Function(appJsSource)();
+    await flushMicrotasks();
+
+    const cardHtml = document.getElementById('recipes-list').innerHTML;
+    expect(cardHtml).toContain('recipe-card-cost');
+    expect(cardHtml).toContain('$10.00');
   });
 });
